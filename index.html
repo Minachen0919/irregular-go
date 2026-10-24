@@ -86,6 +86,16 @@ h1{margin:0; font-family:var(--display); font-weight:400; font-size:31px; letter
 canvas.chip{width:22px; height:22px; display:block}
 .chg{font:inherit; font-size:12px; padding:2px 10px; border-radius:999px; border:1px solid var(--rule); background:var(--btn); color:var(--ink); cursor:pointer; white-space:nowrap}
 .chg:hover{border-color:var(--muted)}
+.lineup-head{display:grid; gap:2px; padding:0 2px 4px}
+.lineup-head .lt{font-family:var(--display); font-size:22px; letter-spacing:.04em; line-height:1.2}
+.lineup-head .ls{font-size:12.5px; color:var(--muted)}
+.plist.lineup .player{grid-template-columns:46px minmax(0,1fr) auto; padding:12px 12px 12px 10px; background:var(--surface); border-color:var(--rule)}
+.plist.lineup .chipbtn{width:46px; height:46px}
+.plist.lineup canvas.chip{width:42px; height:42px}
+.plist.lineup .pname{font-size:16px; flex-direction:column; align-items:flex-start; gap:0}
+.plist.lineup .cap, .plist.lineup .pill{display:none}
+.plist.lineup .chg{background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-size:13.5px; font-weight:600; padding:7px 16px}
+.plist.lineup .chg:hover{opacity:.9}
 .modal{
   position:fixed; inset:0; z-index:50; display:grid; place-items:center; background:rgba(10,14,12,.5);
   padding:max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
@@ -237,6 +247,10 @@ input[type="range"]:disabled{opacity:.5}
     </section>
 
     <section class="players" aria-live="polite">
+      <div class="lineup-head" id="lineupHead" hidden>
+        <span class="lt">开局前，先选棋子</span>
+        <span class="ls">14 种样式，每人挑一种，别人选过的不能重复。下第一手后也能随时再换。</span>
+      </div>
       <div class="plist" id="plist"></div>
       <div class="status" id="status"></div>
       <p class="hint" id="styleHint" hidden></p>
@@ -1342,7 +1356,7 @@ input[type="range"]:disabled{opacity:.5}
     box.hidden = !pickerSeat;
     document.body.style.overflow = pickerSeat ? "hidden" : "";
     const hint = $("styleHint");
-    hint.hidden = !range(np).some(canEditStyle);
+    hint.hidden = !range(np).some(canEditStyle) || (G.phase === "play" && G.moves.length === 0);
     hint.textContent = roomCode ? "点自己那行的「换棋子」选样式" : "每位玩家都可以点「换棋子」选样式";
     if (!pickerSeat) return;
     $("pickerSub").textContent = roomCode ? `你是第 ${pickerSeat} 手 · ${STYLES[ES[pickerSeat]].zh}` : `正在给第 ${pickerSeat} 位玩家选 · 点上方的棋子切换玩家`;
@@ -1449,7 +1463,11 @@ input[type="range"]:disabled{opacity:.5}
       $("takeover").hidden = me !== 0;
     }
 
-    // players
+    // players: before the first move the list becomes a stone-picking lineup
+    const pregame = phase === "play" && G.moves.length === 0;
+    const anyEditable = range(np).some(canEditStyle);
+    $("plist").classList.toggle("lineup", pregame);
+    $("lineupHead").hidden = !(pregame && anyEditable);
     for (const c of range(np)) {
       const row = $("p" + c);
       if (!row) continue;
@@ -1460,12 +1478,15 @@ input[type="range"]:disabled{opacity:.5}
       chipBtn.setAttribute("aria-label", editable ? `换棋子，当前 ${C(c)}` : C(c));
       chipBtn.classList.toggle("picking", pickerSeat === c);
       $("chg" + c).hidden = !editable;
-      if (chip.dataset.style !== ES[c]) { drawChip(chip, ES[c], 22, 9); chip.dataset.style = ES[c]; }
+      $("chg" + c).textContent = pregame ? "选棋子" : "换棋子";
+      const chipKey = ES[c] + (pregame ? "|L" : "|S");
+      if (chip.dataset.style !== chipKey) { if (pregame) drawChip(chip, ES[c], 42, 17); else drawChip(chip, ES[c], 22, 9); chip.dataset.style = chipKey; }
       row.classList.toggle("on", phase === "play" && st.turn === c && (!online || full) && !isOut(c));
       row.classList.toggle("out", isOut(c));
       const who = $("who" + c);
       who.replaceChildren();
       const bits = [];
+      if (pregame) bits.push(`第 ${c} 手`);
       if (online) {
         const seated = G.seats[K(c)];
         if (me === c) bits.push("你");
