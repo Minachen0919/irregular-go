@@ -76,15 +76,20 @@ h1{margin:0; font-family:var(--display); font-weight:400; font-size:31px; letter
 .plist{display:grid; gap:6px}
 .player.out{opacity:.5}
 .player{
-  display:grid; grid-template-columns:22px minmax(0,1fr) auto; align-items:center; gap:10px;
+  display:grid; grid-template-columns:24px minmax(0,1fr) auto; align-items:center; gap:10px;
   padding:10px 12px; border-radius:10px; border:1px solid transparent; transition:background-color .2s, border-color .2s;
 }
 .player.on{background:var(--surface); border-color:var(--rule)}
-.chip{width:20px; height:20px; border-radius:50%}
-.chip.b{background:radial-gradient(circle at 35% 30%, #6c6c69, #1c1c1b 55%, #060606)}
-.chip.w{background:radial-gradient(circle at 35% 30%, #fff, #ece8df 55%, #b9b3a5); box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
-.chip.r{background:radial-gradient(circle at 35% 30%, #F08C78, #C2412D 55%, #6F1C12)}
-.chip.u{background:radial-gradient(circle at 35% 30%, #8FB0E6, #3460A8 55%, #15295A)}
+.chipbtn{width:24px; height:24px; padding:0; border:0; border-radius:50%; background:none; display:grid; place-items:center; cursor:pointer}
+.chipbtn:disabled{cursor:default}
+.chipbtn:not(:disabled):hover, .chipbtn.picking{box-shadow:0 0 0 2px var(--accent)}
+canvas.chip{width:22px; height:22px; display:block}
+.picker{display:grid; gap:10px; padding:12px; border:1px solid var(--rule); border-radius:10px; background:var(--surface)}
+.pick-grid{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px}
+.pick-grid button{display:flex; flex-direction:column; align-items:center; gap:2px; padding:4px 0 3px; border:1px solid transparent; border-radius:8px; background:none; cursor:pointer; color:var(--ink); font:inherit; font-size:11.5px; line-height:1.3}
+.pick-grid button[aria-pressed="true"]{border-color:var(--ink); background:var(--btn)}
+.pick-grid button:disabled{opacity:.3; cursor:default}
+.pick-grid canvas{width:30px; height:30px; display:block}
 .pname{font-weight:600; display:flex; align-items:center; gap:8px; min-width:0}
 .who{font-size:12px; font-weight:400; color:var(--muted); display:inline-flex; align-items:center; gap:5px}
 .dot{width:7px; height:7px; border-radius:50%; border:1.5px solid var(--muted)}
@@ -156,7 +161,7 @@ input[type="range"]:disabled{opacity:.5}
   .panel{display:contents}
   .brand{order:-1}
   .stage{order:0; position:static}
-  .room,.players,.banner,.actions,.shape{order:1}
+  .room,.players,.picker,.banner,.actions,.shape{order:1}
   .board-wrap{width:100%}
   h1{font-size:27px}
 }
@@ -213,6 +218,12 @@ input[type="range"]:disabled{opacity:.5}
     <section class="players" aria-live="polite">
       <div class="plist" id="plist"></div>
       <div class="status" id="status"></div>
+      <p class="hint" id="styleHint" hidden></p>
+    </section>
+
+    <section class="picker" id="picker" hidden>
+      <div class="row"><span class="label" id="pickerTitle">选择棋子</span><button class="linkbtn" id="pickerClose" type="button">完成</button></div>
+      <div class="pick-grid" id="pickGrid"></div>
     </section>
 
     <section class="banner" id="banner" hidden>
@@ -288,17 +299,30 @@ input[type="range"]:disabled{opacity:.5}
   const CODE_CH = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const KOMIS = [0, 5.5, 6.5, 7.5];
   const FB_VER = "10.12.2";
-  const COLORS = [null, { key: "b", name: "黑" }, { key: "w", name: "白" }, { key: "r", name: "红" }, { key: "u", name: "蓝" }];
+  // seats are slots 1-4 (turn order) stored under keys b/w/r/u; each seat picks a stone style
   const KEYS = ["b", "w", "r", "u"];
-  const STONE = {
-    1: ["#6e6e6a", "#2a2a28", "#0a0a09"],
-    2: ["#ffffff", "#eeebe3", "#bbb5a7"],
-    3: ["#F08C78", "#C2412D", "#6F1C12"],
-    4: ["#8FB0E6", "#3460A8", "#15295A"],
+  const STYLES = {
+    ink: { n: "墨黑", c: ["#6e6e6a", "#2a2a28", "#0a0a09"], ring: "#D4472E", mark: "#141413" },
+    shell: { n: "蛤白", c: ["#ffffff", "#eeebe3", "#bbb5a7"], stripes: 1, ring: "#D4472E", mark: "#F7F5EF", light: 1 },
+    cinnabar: { n: "朱砂", c: ["#F08C78", "#C2412D", "#6F1C12"], ring: "#FFFFFF", mark: "#B8392A" },
+    ultra: { n: "群青", c: ["#8FB0E6", "#3460A8", "#15295A"], ring: "#FFFFFF", mark: "#2F5597" },
+    jade: { n: "翡翠", c: ["#B9F0CF", "#2E9A64", "#0E4A2E"], glass: 1, ring: "#FFFFFF", mark: "#2E9A64" },
+    celadon: { n: "天青", c: ["#F2FBFA", "#A6D3CE", "#4F837E"], ring: "#D4472E", mark: "#8CC2BC", light: 1 },
+    lotus: { n: "藕荷", c: ["#ECDDF5", "#9A6FBF", "#4A2A66"], ring: "#FFFFFF", mark: "#8A5FB0" },
+    rouge: { n: "胭脂", c: ["#FFC9D7", "#D9557A", "#7A1F3A"], ring: "#FFFFFF", mark: "#C9466C" },
+    daigreen: { n: "黛绿", c: ["#86AA95", "#2F5A45", "#0F241B"], ring: "#FFFFFF", mark: "#2F5A45" },
+    amber: { n: "琥珀", c: ["#FFE6A8", "#D9871E", "#6B3A08"], glass: 1, ring: "#FFFFFF", mark: "#C2741A" },
+    gold: { n: "鎏金", m: ["#FFF4C2", "#D9A93A", "#7A5410", "#F6DA86"], ring: "#7A1F14", mark: "#B8892A" },
+    silver: { n: "银霜", m: ["#FFFFFF", "#BCC2C9", "#5A6068", "#E8EBEE"], ring: "#D4472E", mark: "#A9B0B8", light: 1 },
+    tortoise: { n: "玳瑁", c: ["#EBA850", "#9A5A1C", "#3E1F08"], spots: 1, ring: "#FFFFFF", mark: "#8A4E18" },
+    night: { n: "星空", c: ["#474C8F", "#1A1C3D", "#07081A"], stars: 1, ring: "#F2C14E", mark: "#1A1C3D" },
   };
-  const MARK = { 1: "#141413", 2: "#F7F5EF", 3: "#B8392A", 4: "#2F5597" };
-  const K = (c) => COLORS[c].key;
-  const C = (c) => (COLORS[c] ? COLORS[c].name : "");
+  const STYLE_IDS = Object.keys(STYLES);
+  const DEFAULT_STYLES = { b: "ink", w: "shell", r: "cinnabar", u: "ultra" };
+  let ES = { 1: "ink", 2: "shell", 3: "cinnabar", 4: "ultra" };
+  const K = (c) => KEYS[c - 1];
+  const styleOf = (c) => STYLES[ES[c]] || STYLES.ink;
+  const C = (c) => (c >= 1 && c <= 4 ? styleOf(c).n : "");
   const allFalse = () => ({ b: false, w: false, r: false, u: false });
   const range = (n) => Array.from({ length: n }, (_, i) => i + 1);
   const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
@@ -316,7 +340,7 @@ input[type="range"]:disabled{opacity:.5}
 
   /* ---------- game record ---------- */
   function freshGame(cfg) {
-    return { v: 2, cfg: { ...cfg }, moves: [], seats: { b: "", w: "", r: "", u: "" }, phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null };
+    return { v: 2, cfg: { ...cfg }, moves: [], seats: { b: "", w: "", r: "", u: "" }, styles: { ...DEFAULT_STYLES }, phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null };
   }
   function merge(a, b) {
     const out = a && typeof a === "object" && !Array.isArray(a) ? { ...a } : {};
@@ -342,7 +366,9 @@ input[type="range"]:disabled{opacity:.5}
     const s = d.seats && typeof d.seats === "object" ? d.seats : {};
     const ok = d.ok && typeof d.ok === "object" ? d.ok : {};
     const out = d.resigned && typeof d.resigned === "object" ? d.resigned : {};
+    const sty = d.styles && typeof d.styles === "object" ? d.styles : {};
     for (const k of KEYS) {
+      g.styles[k] = typeof sty[k] === "string" && STYLES[sty[k]] ? sty[k] : DEFAULT_STYLES[k];
       g.seats[k] = typeof s[k] === "string" ? s[k].slice(0, 40) : "";
       g.ok[k] = ok[k] === true;
       g.resigned[k] = out[k] === true;
@@ -369,7 +395,7 @@ input[type="range"]:disabled{opacity:.5}
   let roomCode = "", ref = null, unsub = null, pending = null, inflight = false, busy = false;
   let F = null, db = null, dbReady = false;
   let presRef = null, presUnsubs = [], presenceOn = false, peersMap = {}, lastPresence = "";
-  let tab = "local", myColor = 1, me = 0, builtPlayers = 0;
+  let tab = "local", myColor = 1, me = 0, builtPlayers = 0, pickerSeat = 0;
   let G = loadLocal() || freshGame({ N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5, players: 2 });
   let showCoords = ls.get("igo.coords") !== "0";
   let SH = { key: "" }, st = null, sc = null;
@@ -560,6 +586,7 @@ input[type="range"]:disabled{opacity:.5}
     const padSteps = showCoords ? 1.55 : 1.0;
     const step = s / (SH.N - 1 + 2 * padSteps);
     geom = { s, dpr, step, pad: padSteps * step };
+    spriteCache.clear();
     buildStatic();
     draw();
   }
@@ -678,19 +705,82 @@ input[type="range"]:disabled{opacity:.5}
     staticCv = stc;
   }
 
-  function stone(g, x, y, r, c, alpha) {
+  function rnd(seed) {
+    let v = seed % 2147483647; if (v <= 0) v += 2147483646;
+    return () => (v = (v * 16807) % 2147483647) / 2147483647;
+  }
+  function paintStone(g, x, y, R, s, seed) {
+    g.save();
+    g.shadowColor = "rgba(30,18,6,0.45)"; g.shadowBlur = R * 0.35;
+    g.shadowOffsetX = R * 0.1; g.shadowOffsetY = R * 0.17;
+    let f;
+    if (s.m) {
+      f = g.createLinearGradient(x - R, y - R, x + R, y + R);
+      f.addColorStop(0, s.m[0]); f.addColorStop(0.32, s.m[1]); f.addColorStop(0.52, s.m[3]); f.addColorStop(0.72, s.m[1]); f.addColorStop(1, s.m[2]);
+    } else {
+      f = g.createRadialGradient(x - R * 0.35, y - R * 0.4, R * 0.05, x, y, R * 1.05);
+      f.addColorStop(0, s.c[0]); f.addColorStop(s.light ? 0.55 : 0.35, s.c[1]); f.addColorStop(1, s.c[2]);
+    }
+    g.fillStyle = f;
+    g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fill();
+    g.restore();
+    g.save();
+    g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.clip();
+    const r = rnd(seed);
+    if (s.stripes) {
+      g.strokeStyle = "rgba(120,100,70,0.10)"; g.lineWidth = Math.max(0.8, R * 0.05);
+      for (let k = 1; k < 6; k++) { g.beginPath(); g.arc(x - R * 1.6, y + R * (0.2 + (r() - 0.5) * 0.3), R * (0.9 + k * 0.28), -0.6, 0.6); g.stroke(); }
+    }
+    if (s.spots) {
+      for (let k = 0; k < 9; k++) {
+        g.fillStyle = `rgba(45,20,5,${0.35 + r() * 0.3})`;
+        g.beginPath(); g.ellipse(x + (r() - 0.5) * 1.6 * R, y + (r() - 0.5) * 1.6 * R, R * (0.12 + r() * 0.22), R * (0.08 + r() * 0.14), r() * 3, 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (s.stars) {
+      for (let k = 0; k < 14; k++) {
+        g.fillStyle = `rgba(255,255,255,${0.5 + r() * 0.5})`;
+        g.beginPath(); g.arc(x + (r() - 0.5) * 1.7 * R, y + (r() - 0.5) * 1.7 * R, R * (0.025 + r() * 0.04), 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (s.glass) {
+      const q = g.createRadialGradient(x + R * 0.35, y + R * 0.4, 0, x + R * 0.35, y + R * 0.4, R * 0.75);
+      q.addColorStop(0, "rgba(255,255,255,0.45)"); q.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = q; g.fillRect(x - R, y - R, 2 * R, 2 * R);
+    }
+    if (s.glass || s.m || s.stars) {
+      g.fillStyle = "rgba(255,255,255,0.55)";
+      g.beginPath(); g.ellipse(x - R * 0.38, y - R * 0.45, R * 0.22, R * 0.12, -0.6, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+  const spriteCache = new Map();
+  function sprite(id, variant, R, dpr) {
+    const key = id + "|" + variant + "|" + Math.round(R * dpr * 10);
+    let c = spriteCache.get(key);
+    if (c) return c;
+    const side = Math.ceil(R * 3.2 * dpr);
+    c = document.createElement("canvas"); c.width = side; c.height = side;
+    const g = c.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    paintStone(g, R * 1.5, R * 1.5, R, STYLES[id], variant * 7919 + 13);
+    spriteCache.set(key, c);
+    return c;
+  }
+  function stone(g, x, y, r, c, alpha, variant) {
+    const dpr = geom.dpr, sp = sprite(ES[c], (variant || 0) & 3, r, dpr);
     g.save();
     g.globalAlpha = alpha;
-    if (alpha === 1) {
-      g.shadowColor = "rgba(30,18,6,0.45)"; g.shadowBlur = r * 0.35;
-      g.shadowOffsetX = r * 0.1; g.shadowOffsetY = r * 0.17;
-    }
-    const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r * 1.05);
-    const [a, b, d] = STONE[c];
-    gr.addColorStop(0, a); gr.addColorStop(c === 2 ? 0.55 : 0.35, b); gr.addColorStop(1, d);
-    g.fillStyle = gr;
-    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.drawImage(sp, x - r * 1.5, y - r * 1.5, sp.width / dpr, sp.height / dpr);
     g.restore();
+  }
+  function drawChip(canvas, id, size, R) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    canvas.width = Math.round(size * dpr); canvas.height = Math.round(size * dpr);
+    const g = canvas.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, size, size);
+    paintStone(g, size / 2 - R * 0.06, size / 2 - R * 0.1, R, STYLES[id], 29);
   }
 
   function draw() {
@@ -705,7 +795,7 @@ input[type="range"]:disabled{opacity:.5}
     for (let i = 0; i < st.board.length; i++) {
       if (!st.board[i]) continue;
       const [x, y] = P(i);
-      stone(ctx, x, y, r, st.board[i], dead && dead.has(i) ? 0.36 : 1);
+      stone(ctx, x, y, r, st.board[i], dead && dead.has(i) ? 0.36 : 1, i);
     }
     if (sc) {
       const q = r * 0.5;
@@ -713,18 +803,19 @@ input[type="range"]:disabled{opacity:.5}
         const o = sc.terr[i];
         if (!o || (st.board[i] && !dead.has(i))) continue;
         const [x, y] = P(i);
-        ctx.fillStyle = MARK[o];
+        const ms = styleOf(o);
+        ctx.fillStyle = ms.mark;
         ctx.fillRect(x - q / 2, y - q / 2, q, q);
-        if (o === 2) { ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.lineWidth = 1; ctx.strokeRect(x - q / 2, y - q / 2, q, q); }
+        if (ms.light) { ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.lineWidth = 1; ctx.strokeRect(x - q / 2, y - q / 2, q, q); }
       }
     }
     if (G.phase === "play" && st.last >= 0 && st.board[st.last]) {
       const [x, y] = P(st.last);
-      ctx.strokeStyle = st.board[st.last] >= 3 ? "#FFFFFF" : "#D4472E";
+      ctx.strokeStyle = styleOf(st.board[st.last]).ring;
       ctx.lineWidth = Math.max(1.5, step * 0.075);
       ctx.beginPath(); ctx.arc(x, y, r * 0.4, 0, 7); ctx.stroke();
     }
-    if (hover >= 0 && !st.board[hover] && canPlay()) { const [x, y] = P(hover); stone(ctx, x, y, r, st.turn, 0.42); }
+    if (hover >= 0 && !st.board[hover] && canPlay()) { const [x, y] = P(hover); stone(ctx, x, y, r, st.turn, 0.42, hover); }
   }
 
   /* ---------- network: Firebase Realtime Database ---------- */
@@ -803,8 +894,28 @@ input[type="range"]:disabled{opacity:.5}
   }
   const shapeLocked = () => !!roomCode && (me === 0 || (G.moves.length > 0 && G.phase !== "end"));
 
+  function effStyles() {
+    const used = new Set(), out = {};
+    for (const c of range(4)) {
+      let id = G.styles[K(c)];
+      if (c <= NP()) {
+        if (used.has(id)) id = STYLE_IDS.find((x) => !used.has(x));
+        used.add(id);
+      }
+      out[c] = id;
+    }
+    return out;
+  }
+  const canEditStyle = (c) => c >= 1 && c <= NP() && (!roomCode || me === c);
+  function setStyle(c, id) {
+    if (!canEditStyle(c) || !STYLES[id]) return;
+    if (range(NP()).some((x) => x !== c && ES[x] === id)) return;
+    apply({ styles: { [K(c)]: id } });
+  }
+
   function derive() {
     const changed = ensureShape(G.cfg);
+    ES = effStyles();
     me = seatOf(G);
     st = replay(G.moves);
     st.turn = nextActive(st.lastColor || NP());
@@ -886,6 +997,7 @@ input[type="range"]:disabled{opacity:.5}
       }
       if (!code) throw { code: "busy" };
       const g = freshGame(G.cfg);
+      g.styles = { ...G.styles };
       g.seats[K(Math.min(myColor, g.cfg.players))] = cid;
       g.at = Date.now();
       await r.set(g);
@@ -1039,8 +1151,9 @@ input[type="range"]:disabled{opacity:.5}
     const patch = { moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null };
     if (rotate && roomCode) {
       const n = NP(), seats = {};
-      for (const c of range(n)) seats[K(c)] = G.seats[K(c === 1 ? n : c - 1)] || "";
-      patch.seats = seats;
+      const styles = {};
+      for (const c of range(n)) { const from = K(c === 1 ? n : c - 1); seats[K(c)] = G.seats[from] || ""; styles[K(c)] = G.styles[from]; }
+      patch.seats = seats; patch.styles = styles;
     }
     hover = -1;
     apply(patch);
@@ -1085,11 +1198,16 @@ input[type="range"]:disabled{opacity:.5}
       const name = el("span", "pname");
       const who = el("span", "who"); who.id = "who" + c;
       const pill = el("span", "pill"); pill.textContent = "落子中";
-      name.append(document.createTextNode(C(c) + " "), who, pill);
+      const nm = el("span"); nm.id = "name" + c;
+      name.append(nm, who, pill);
       const cap = el("span", "cap"), capL = el("span"), capV = el("b");
       capL.id = "capL" + c; capV.id = "cap" + c;
       cap.append(capL, capV);
-      row.append(el("span", "chip " + K(c)), name, cap);
+      const chipBtn = el("button", "chipbtn"); chipBtn.type = "button"; chipBtn.id = "chipBtn" + c;
+      const chip = el("canvas", "chip"); chip.id = "chip" + c;
+      chipBtn.append(chip);
+      chipBtn.addEventListener("click", () => { if (canEditStyle(c)) { pickerSeat = pickerSeat === c ? 0 : c; render(); } });
+      row.append(chipBtn, name, cap);
       box.append(row);
     }
     const seg = $("colorSeg");
@@ -1101,8 +1219,38 @@ input[type="range"]:disabled{opacity:.5}
     }
     const tk = $("takeBtns");
     tk.replaceChildren();
-    for (const c of range(n)) tk.append(mkBtn(`我是${C(c)}方`, () => takeSeat(c)));
+    for (const c of range(n)) { const t = mkBtn("", () => takeSeat(c)); t.dataset.c = c; tk.append(t); }
     builtPlayers = n;
+  }
+  function buildPicker() {
+    const grid = $("pickGrid");
+    for (const id of STYLE_IDS) {
+      const b = el("button"); b.type = "button"; b.dataset.id = id;
+      const cvs = el("canvas"); drawChip(cvs, id, 30, 12.5);
+      const t = el("span"); t.textContent = STYLES[id].n;
+      b.append(cvs, t);
+      b.addEventListener("click", () => setStyle(pickerSeat, id));
+      grid.append(b);
+    }
+  }
+  function renderPicker() {
+    if (pickerSeat && !canEditStyle(pickerSeat)) pickerSeat = 0;
+    const box = $("picker"), np = NP();
+    box.hidden = !pickerSeat;
+    const anyEditable = range(np).some(canEditStyle);
+    const hint = $("styleHint");
+    hint.hidden = !!pickerSeat || !anyEditable;
+    hint.textContent = roomCode ? "点自己那行左边的棋子可以换样式" : "点每行左边的棋子可以换样式";
+    if (!pickerSeat) return;
+    $("pickerTitle").textContent = roomCode ? `选你的棋子（现在是${C(pickerSeat)}）` : `第 ${pickerSeat} 位玩家的棋子（现在是${C(pickerSeat)}）`;
+    const owner = {};
+    for (const c of range(np)) if (c !== pickerSeat) owner[ES[c]] = c;
+    document.querySelectorAll("#pickGrid button").forEach((b) => {
+      const id = b.dataset.id;
+      b.setAttribute("aria-pressed", String(ES[pickerSeat] === id));
+      b.disabled = !!owner[id];
+      b.title = owner[id] ? `第 ${owner[id]} 位玩家正在用` : STYLES[id].n;
+    });
   }
   function statusText() {
     const n = G.moves.length + 1, online = !!roomCode;
@@ -1129,7 +1277,7 @@ input[type="range"]:disabled{opacity:.5}
     } else if (G.phase === "score" && sc) {
       if (np === 2) {
         const d = sc.totals[1] - sc.totals[2];
-        t = `黑 ${sc.areas[1]} : 白 ${sc.areas[2]} + 贴 ${fmt(sc.komi)}` + (d ? ` · ${d > 0 ? "黑" : "白"}领先 ${fmt(Math.abs(d))}` : " · 持平");
+        t = `${C(1)} ${sc.areas[1]} : ${C(2)} ${sc.areas[2]} + 贴 ${fmt(sc.komi)}` + (d ? ` · ${C(d > 0 ? 1 : 2)}领先 ${fmt(Math.abs(d))}` : " · 持平");
       } else {
         t = activeColors().map((c) => `${C(c)} ${sc.areas[c]}`).join(" · ") + (sc.leader ? ` · ${C(sc.leader)}领先` : " · 并列");
       }
@@ -1143,7 +1291,7 @@ input[type="range"]:disabled{opacity:.5}
         s = np === 2 ? `${C(3 - r.winner)}方认输` : "其他玩家都已认输";
       } else if (np === 2) {
         t = r.winner ? `${C(r.winner)}胜 ${fmt(r.margin)} 目` : "和棋";
-        s = `数子：黑 ${fmt(r.areas.b)} · 白 ${fmt(r.areas.w)}（含贴 ${fmt(G.cfg.komi)}）`;
+        s = `数子：${C(1)} ${fmt(r.areas.b)} · ${C(2)} ${fmt(r.areas.w)}（含贴 ${fmt(G.cfg.komi)}）`;
       } else {
         t = r.winner ? `${C(r.winner)}胜` : "平局";
         const order = range(np).sort((a, b) => (isOut(a) - isOut(b)) || (r.areas[K(b)] - r.areas[K(a)]));
@@ -1173,7 +1321,8 @@ input[type="range"]:disabled{opacity:.5}
     $("codeIn").disabled = !db;
     $("createBtn").textContent = busy ? "连接中…" : np === 2 ? "创建房间" : `创建${np === 3 ? "三" : "四"}色房间`;
     $("idleHint").textContent = !dbReady ? "正在连接联机服务…" : db ? "创建后把邀请链接发给朋友，点开就能加入；也可以输入房间号。" : "联机服务还没配置好，现在只能本机对弈。";
-    document.querySelectorAll("#colorSeg button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.c === myColor)));
+    document.querySelectorAll("#colorSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.c === myColor)); b.textContent = C(+b.dataset.c); });
+    document.querySelectorAll("#takeBtns button").forEach((b) => { b.textContent = `我是${C(+b.dataset.c)}方`; });
     if (online) {
       $("codeTxt").textContent = roomCode;
       let info;
@@ -1194,6 +1343,13 @@ input[type="range"]:disabled{opacity:.5}
     for (const c of range(np)) {
       const row = $("p" + c);
       if (!row) continue;
+      $("name" + c).textContent = C(c) + " ";
+      const chipBtn = $("chipBtn" + c), chip = $("chip" + c), editable = canEditStyle(c);
+      chipBtn.disabled = !editable;
+      chipBtn.title = editable ? "换棋子" : C(c);
+      chipBtn.setAttribute("aria-label", editable ? `换棋子，当前${C(c)}` : C(c));
+      chipBtn.classList.toggle("picking", pickerSeat === c);
+      if (chip.dataset.style !== ES[c]) { drawChip(chip, ES[c], 22, 9); chip.dataset.style = ES[c]; }
       row.classList.toggle("on", phase === "play" && st.turn === c && (!online || full) && !isOut(c));
       row.classList.toggle("out", isOut(c));
       const who = $("who" + c);
@@ -1216,6 +1372,7 @@ input[type="range"]:disabled{opacity:.5}
       else { $("capL" + c).textContent = "提"; $("cap" + c).textContent = st.caps[c]; }
     }
     if (!flashTimer) { const e = $("status"); e.textContent = statusText(); e.classList.remove("warn"); }
+    renderPicker();
     renderBanner();
 
     // actions
@@ -1247,9 +1404,7 @@ input[type="range"]:disabled{opacity:.5}
     $("komiField").hidden = np !== 2;
     const mh = $("multiHint");
     mh.hidden = np === 2;
-    mh.textContent = np === 3
-      ? "三色：黑 → 白 → 红 轮流落子。三人连续停一手进入数子，按数子多少排名，不贴目。"
-      : "四色：黑 → 白 → 红 → 蓝 轮流落子。四人连续停一手进入数子，按数子多少排名，不贴目。";
+    mh.textContent = `${np === 3 ? "三" : "四"}人按 ${range(np).map(C).join(" → ")} 的顺序轮流落子。所有人连续停一手进入数子，按数子多少排名，不贴目。`;
     const rough = $("rough");
     if (document.activeElement !== rough) rough.value = cfg.rough;
     rough.disabled = locked;
@@ -1307,6 +1462,8 @@ input[type="range"]:disabled{opacity:.5}
 
   $("tabLocal").addEventListener("click", () => { tab = "local"; roomErr(""); if (roomCode) leaveRoom(); else render(); });
   $("tabOnline").addEventListener("click", () => { tab = "online"; render(); });
+  $("pickerClose").addEventListener("click", () => { pickerSeat = 0; render(); });
+  buildPicker();
   $("createBtn").addEventListener("click", createRoom);
   $("joinForm").addEventListener("submit", (e) => { e.preventDefault(); joinRoom($("codeIn").value); });
   $("leaveBtn").addEventListener("click", () => { tab = "online"; roomErr(""); leaveRoom(); });
