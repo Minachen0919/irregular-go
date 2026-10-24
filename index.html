@@ -76,7 +76,7 @@ h1{margin:0; font-family:var(--display); font-weight:400; font-size:31px; letter
 .plist{display:grid; gap:6px}
 .player.out{opacity:.5}
 .player{
-  display:grid; grid-template-columns:24px minmax(0,1fr) auto; align-items:center; gap:10px;
+  display:grid; grid-template-columns:24px minmax(0,1fr) auto auto; align-items:center; gap:10px;
   padding:10px 12px; border-radius:10px; border:1px solid transparent; transition:background-color .2s, border-color .2s;
 }
 .player.on{background:var(--surface); border-color:var(--rule)}
@@ -84,12 +84,33 @@ h1{margin:0; font-family:var(--display); font-weight:400; font-size:31px; letter
 .chipbtn:disabled{cursor:default}
 .chipbtn:not(:disabled):hover, .chipbtn.picking{box-shadow:0 0 0 2px var(--accent)}
 canvas.chip{width:22px; height:22px; display:block}
-.picker{display:grid; gap:10px; padding:12px; border:1px solid var(--rule); border-radius:10px; background:var(--surface)}
-.pick-grid{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px}
-.pick-grid button{display:flex; flex-direction:column; align-items:center; gap:2px; padding:4px 0 3px; border:1px solid transparent; border-radius:8px; background:none; cursor:pointer; color:var(--ink); font:inherit; font-size:11.5px; line-height:1.3}
-.pick-grid button[aria-pressed="true"]{border-color:var(--ink); background:var(--btn)}
-.pick-grid button:disabled{opacity:.3; cursor:default}
-.pick-grid canvas{width:30px; height:30px; display:block}
+.chg{font:inherit; font-size:12px; padding:2px 10px; border-radius:999px; border:1px solid var(--rule); background:var(--btn); color:var(--ink); cursor:pointer; white-space:nowrap}
+.chg:hover{border-color:var(--muted)}
+.modal{
+  position:fixed; inset:0; z-index:50; display:grid; place-items:center; background:rgba(10,14,12,.5);
+  padding:max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.sheet{width:min(100%, 660px); max-height:100%; overflow:auto; background:var(--bg); border:1px solid var(--rule); border-radius:14px; padding:18px; display:grid; gap:14px; box-shadow:0 24px 60px rgba(0,0,0,.28)}
+.sheet-head{display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap}
+.sheet-title{font-family:var(--display); font-size:25px; letter-spacing:.03em; line-height:1.2}
+.pv-wrap{height:112px; min-width:0}
+.pv-wrap canvas{display:block; border-radius:10px; cursor:default}
+.pick-grid{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:8px}
+.pick-grid button{
+  position:relative; min-width:0; display:flex; flex-direction:column; align-items:center; gap:1px;
+  padding:6px 3px 8px; border:1px solid var(--rule); border-radius:12px; background:var(--surface); color:var(--ink); font:inherit; cursor:pointer;
+}
+.pick-grid button:hover:not(:disabled){border-color:var(--muted)}
+.pick-grid button[aria-pressed="true"]{border:2px solid var(--accent); padding:5px 2px 7px}
+.pick-grid button:disabled{cursor:default}
+.pick-grid button:disabled canvas, .pick-grid button:disabled .en{opacity:.38}
+.pick-grid canvas{display:block; width:100%; max-width:68px; aspect-ratio:1/1; height:auto; border-radius:10px; margin-bottom:4px}
+.pick-grid .en{font-size:13px; font-weight:600; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.pick-grid .zh{font-size:11px; color:var(--muted)}
+.pick-grid .tag{position:absolute; top:10px; left:50%; transform:translateX(-50%); font-family:var(--mono); font-size:11px; padding:0 8px; line-height:18px; border-radius:9px; background:var(--btn); border:1px solid var(--rule); color:var(--muted)}
+.pick-grid .ck{position:absolute; top:5px; right:5px; width:20px; height:20px; border-radius:50%; background:var(--accent); color:var(--on-accent); display:grid; place-items:center; font-size:12px; line-height:1}
+.sheet-foot{display:flex; justify-content:space-between; align-items:center; gap:12px}
+@media (max-width:560px){ .pick-grid{grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px} .pick-grid .en{font-size:11.5px; letter-spacing:-.01em} .sheet{padding:14px} }
 .pname{font-weight:600; display:flex; align-items:center; gap:8px; min-width:0}
 .who{font-size:12px; font-weight:400; color:var(--muted); display:inline-flex; align-items:center; gap:5px}
 .dot{width:7px; height:7px; border-radius:50%; border:1.5px solid var(--muted)}
@@ -161,7 +182,7 @@ input[type="range"]:disabled{opacity:.5}
   .panel{display:contents}
   .brand{order:-1}
   .stage{order:0; position:static}
-  .room,.players,.picker,.banner,.actions,.shape{order:1}
+  .room,.players,.banner,.actions,.shape{order:1}
   .board-wrap{width:100%}
   h1{font-size:27px}
 }
@@ -219,11 +240,6 @@ input[type="range"]:disabled{opacity:.5}
       <div class="plist" id="plist"></div>
       <div class="status" id="status"></div>
       <p class="hint" id="styleHint" hidden></p>
-    </section>
-
-    <section class="picker" id="picker" hidden>
-      <div class="row"><span class="label" id="pickerTitle">选择棋子</span><button class="linkbtn" id="pickerClose" type="button">完成</button></div>
-      <div class="pick-grid" id="pickGrid"></div>
     </section>
 
     <section class="banner" id="banner" hidden>
@@ -292,6 +308,21 @@ input[type="range"]:disabled{opacity:.5}
   </aside>
 </div>
 
+<div class="modal" id="picker" hidden role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
+  <div class="sheet">
+    <div class="sheet-head">
+      <span class="sheet-title" id="pickerTitle">Choose your stone</span>
+      <span class="hint" id="pickerSub"></span>
+    </div>
+    <div class="pv-wrap" id="pvWrap"><canvas id="pv" aria-hidden="true"></canvas></div>
+    <div class="pick-grid" id="pickGrid"></div>
+    <div class="sheet-foot">
+      <span class="hint" id="pickerNote"></span>
+      <button class="btn primary" id="pickerClose" type="button">完成</button>
+    </div>
+  </div>
+</div>
+
 <script src="config.js"></script>
 <script type="module">
   const $ = (id) => document.getElementById(id);
@@ -302,20 +333,20 @@ input[type="range"]:disabled{opacity:.5}
   // seats are slots 1-4 (turn order) stored under keys b/w/r/u; each seat picks a stone style
   const KEYS = ["b", "w", "r", "u"];
   const STYLES = {
-    ink: { n: "墨黑", c: ["#6e6e6a", "#2a2a28", "#0a0a09"], ring: "#D4472E", mark: "#141413" },
-    shell: { n: "蛤白", c: ["#ffffff", "#eeebe3", "#bbb5a7"], stripes: 1, ring: "#D4472E", mark: "#F7F5EF", light: 1 },
-    cinnabar: { n: "朱砂", c: ["#F08C78", "#C2412D", "#6F1C12"], ring: "#FFFFFF", mark: "#B8392A" },
-    ultra: { n: "群青", c: ["#8FB0E6", "#3460A8", "#15295A"], ring: "#FFFFFF", mark: "#2F5597" },
-    jade: { n: "翡翠", c: ["#B9F0CF", "#2E9A64", "#0E4A2E"], glass: 1, ring: "#FFFFFF", mark: "#2E9A64" },
-    celadon: { n: "天青", c: ["#F2FBFA", "#A6D3CE", "#4F837E"], ring: "#D4472E", mark: "#8CC2BC", light: 1 },
-    lotus: { n: "藕荷", c: ["#ECDDF5", "#9A6FBF", "#4A2A66"], ring: "#FFFFFF", mark: "#8A5FB0" },
-    rouge: { n: "胭脂", c: ["#FFC9D7", "#D9557A", "#7A1F3A"], ring: "#FFFFFF", mark: "#C9466C" },
-    daigreen: { n: "黛绿", c: ["#86AA95", "#2F5A45", "#0F241B"], ring: "#FFFFFF", mark: "#2F5A45" },
-    amber: { n: "琥珀", c: ["#FFE6A8", "#D9871E", "#6B3A08"], glass: 1, ring: "#FFFFFF", mark: "#C2741A" },
-    gold: { n: "鎏金", m: ["#FFF4C2", "#D9A93A", "#7A5410", "#F6DA86"], ring: "#7A1F14", mark: "#B8892A" },
-    silver: { n: "银霜", m: ["#FFFFFF", "#BCC2C9", "#5A6068", "#E8EBEE"], ring: "#D4472E", mark: "#A9B0B8", light: 1 },
-    tortoise: { n: "玳瑁", c: ["#EBA850", "#9A5A1C", "#3E1F08"], spots: 1, ring: "#FFFFFF", mark: "#8A4E18" },
-    night: { n: "星空", c: ["#474C8F", "#1A1C3D", "#07081A"], stars: 1, ring: "#F2C14E", mark: "#1A1C3D" },
+    ink: { n: "Ink", zh: "墨黑", c: ["#6e6e6a", "#2a2a28", "#0a0a09"], ring: "#D4472E", mark: "#141413" },
+    shell: { n: "Shell", zh: "蛤白", c: ["#ffffff", "#eeebe3", "#bbb5a7"], stripes: 1, ring: "#D4472E", mark: "#F7F5EF", light: 1 },
+    cinnabar: { n: "Cinnabar", zh: "朱砂", c: ["#F08C78", "#C2412D", "#6F1C12"], ring: "#FFFFFF", mark: "#B8392A" },
+    ultra: { n: "Ultramarine", zh: "群青", c: ["#8FB0E6", "#3460A8", "#15295A"], ring: "#FFFFFF", mark: "#2F5597" },
+    jade: { n: "Jade", zh: "翡翠", c: ["#B9F0CF", "#2E9A64", "#0E4A2E"], glass: 1, ring: "#FFFFFF", mark: "#2E9A64" },
+    celadon: { n: "Celadon", zh: "天青", c: ["#F2FBFA", "#A6D3CE", "#4F837E"], ring: "#D4472E", mark: "#8CC2BC", light: 1 },
+    lotus: { n: "Lavender", zh: "藕荷", c: ["#ECDDF5", "#9A6FBF", "#4A2A66"], ring: "#FFFFFF", mark: "#8A5FB0" },
+    rouge: { n: "Rouge", zh: "胭脂", c: ["#FFC9D7", "#D9557A", "#7A1F3A"], ring: "#FFFFFF", mark: "#C9466C" },
+    daigreen: { n: "Forest", zh: "黛绿", c: ["#86AA95", "#2F5A45", "#0F241B"], ring: "#FFFFFF", mark: "#2F5A45" },
+    amber: { n: "Amber", zh: "琥珀", c: ["#FFE6A8", "#D9871E", "#6B3A08"], glass: 1, ring: "#FFFFFF", mark: "#C2741A" },
+    gold: { n: "Gold", zh: "鎏金", m: ["#FFF4C2", "#D9A93A", "#7A5410", "#F6DA86"], ring: "#7A1F14", mark: "#B8892A" },
+    silver: { n: "Frost", zh: "银霜", m: ["#FFFFFF", "#BCC2C9", "#5A6068", "#E8EBEE"], ring: "#D4472E", mark: "#A9B0B8", light: 1 },
+    tortoise: { n: "Tortoise", zh: "玳瑁", c: ["#EBA850", "#9A5A1C", "#3E1F08"], spots: 1, ring: "#FFFFFF", mark: "#8A4E18" },
+    night: { n: "Galaxy", zh: "星空", c: ["#474C8F", "#1A1C3D", "#07081A"], stars: 1, ring: "#F2C14E", mark: "#1A1C3D" },
   };
   const STYLE_IDS = Object.keys(STYLES);
   const DEFAULT_STYLES = { b: "ink", w: "shell", r: "cinnabar", u: "ultra" };
@@ -913,6 +944,14 @@ input[type="range"]:disabled{opacity:.5}
     apply({ styles: { [K(c)]: id } });
   }
 
+  function maybeAutoPick() {
+    if (!roomCode || !me || G.moves.length || G.phase !== "play" || pickerSeat) return;
+    const key = roomCode + ":" + me;
+    if (ls.get("igo.picked") === key) return;
+    ls.set("igo.picked", key);
+    openPicker(me);
+  }
+
   function derive() {
     const changed = ensureShape(G.cfg);
     ES = effStyles();
@@ -923,6 +962,7 @@ input[type="range"]:disabled{opacity:.5}
     if (builtPlayers !== NP()) buildPlayers();
     if (changed || !geom) layout(); else draw();
     render();
+    maybeAutoPick();
   }
 
   function apply(patch) {
@@ -1087,7 +1127,7 @@ input[type="range"]:disabled{opacity:.5}
       if (me === 0) return flash("你在观战，不能落子");
       if (isOut(me)) return flash("你已经认输了");
       if (!allSeated()) return flash("人到齐后才能开始");
-      if (me !== st.turn) return flash(`还没轮到你，现在是${C(st.turn)}方`);
+      if (me !== st.turn) return flash(`还没轮到你，现在轮到 ${C(st.turn)}`);
     }
     if (st.board[i]) return;
     const r = tryPlace(st.board, i, st.turn, st.seen);
@@ -1206,8 +1246,10 @@ input[type="range"]:disabled{opacity:.5}
       const chipBtn = el("button", "chipbtn"); chipBtn.type = "button"; chipBtn.id = "chipBtn" + c;
       const chip = el("canvas", "chip"); chip.id = "chip" + c;
       chipBtn.append(chip);
-      chipBtn.addEventListener("click", () => { if (canEditStyle(c)) { pickerSeat = pickerSeat === c ? 0 : c; render(); } });
-      row.append(chipBtn, name, cap);
+      chipBtn.addEventListener("click", () => openPicker(c));
+      const chg = el("button", "chg"); chg.type = "button"; chg.id = "chg" + c; chg.textContent = "换棋子";
+      chg.addEventListener("click", () => openPicker(c));
+      row.append(chipBtn, name, chg, cap);
       box.append(row);
     }
     const seg = $("colorSeg");
@@ -1222,35 +1264,103 @@ input[type="range"]:disabled{opacity:.5}
     for (const c of range(n)) { const t = mkBtn("", () => takeSeat(c)); t.dataset.c = c; tk.append(t); }
     builtPlayers = n;
   }
+  let pickerReturn = null;
+  function openPicker(c) {
+    if (!canEditStyle(c)) return;
+    if (!pickerSeat) pickerReturn = document.activeElement;
+    pickerSeat = c;
+    render();
+    const sel = document.querySelector('#pickGrid button[aria-pressed="true"]');
+    if (sel) sel.focus({ preventScroll: true });
+  }
+  function closePicker() {
+    if (!pickerSeat) return;
+    pickerSeat = 0;
+    render();
+    if (pickerReturn && document.contains(pickerReturn)) pickerReturn.focus({ preventScroll: true });
+    pickerReturn = null;
+  }
   function buildPicker() {
     const grid = $("pickGrid");
     for (const id of STYLE_IDS) {
       const b = el("button"); b.type = "button"; b.dataset.id = id;
-      const cvs = el("canvas"); drawChip(cvs, id, 30, 12.5);
-      const t = el("span"); t.textContent = STYLES[id].n;
-      b.append(cvs, t);
+      const cvs = el("canvas");
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5), N = 68;
+      cvs.width = N * dpr; cvs.height = N * dpr;
+      const g = cvs.getContext("2d");
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      woodFill(g, N, N, 3);
+      paintStone(g, N / 2, N / 2 - 1, 23, STYLES[id], 41);
+      const tag = el("span", "tag"), ck = el("span", "ck"), en = el("span", "en"), zh = el("span", "zh");
+      ck.textContent = "✓"; ck.setAttribute("aria-hidden", "true");
+      en.textContent = STYLES[id].n; zh.textContent = STYLES[id].zh;
+      b.append(cvs, tag, ck, en, zh);
       b.addEventListener("click", () => setStyle(pickerSeat, id));
       grid.append(b);
     }
   }
+  function woodFill(g, w, h, seed) {
+    g.fillStyle = "#E2B46E"; g.fillRect(0, 0, w, h);
+    const r = rnd(seed * 977 + 5);
+    for (let i = 0; i < w / 3; i++) {
+      g.strokeStyle = r() < 0.6 ? `rgba(130,76,26,${0.05 + r() * 0.1})` : `rgba(255,240,205,${0.06 + r() * 0.08})`;
+      g.lineWidth = 0.5 + r() * 1.2;
+      const x0 = r() * w;
+      g.beginPath();
+      for (let y = 0; y <= h; y += 6) { const x = x0 + 5 * Math.sin(y * 0.012 + x0 * 0.01); if (y) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.stroke();
+    }
+  }
+  const seatLabel = (c) => (roomCode && c === me ? "You" : "P" + c);
+  // drawn at the wrapper's real pixel size so stones stay perfectly round
+  function drawPreview() {
+    if (!pickerSeat) return;
+    const wrapEl = $("pvWrap"), W = Math.floor(wrapEl.getBoundingClientRect().width), H = 112;
+    if (!W) return;
+    const cvs = $("pv"), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cvs.width = Math.round(W * dpr); cvs.height = Math.round(H * dpr);
+    cvs.style.width = W + "px"; cvs.style.height = H + "px";
+    const g = cvs.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    woodFill(g, W, H, 9);
+    const np = NP(), gap = W / np;
+    for (const c of range(np)) {
+      const x = gap * (c - 1) + gap / 2, focus = c === pickerSeat;
+      const R = Math.min(focus ? 30 : 23, gap * (focus ? 0.3 : 0.23));
+      paintStone(g, x, 48, R, styleOf(c), c * 53 + 7);
+      g.textAlign = "center"; g.textBaseline = "alphabetic";
+      g.font = `${focus ? 700 : 500} ${W < 420 ? 11 : 13}px ${css("--body")}`;
+      g.fillStyle = focus ? "rgba(30,16,4,.98)" : "rgba(40,24,8,.78)";
+      g.fillText(`${seatLabel(c)} · ${C(c)}${isOut(c) ? "（认输）" : ""}`, x, 100);
+    }
+    cvs.style.cursor = roomCode ? "default" : "pointer";
+  }
   function renderPicker() {
     if (pickerSeat && !canEditStyle(pickerSeat)) pickerSeat = 0;
     const box = $("picker"), np = NP();
+    const wasOpen = !box.hidden;
     box.hidden = !pickerSeat;
-    const anyEditable = range(np).some(canEditStyle);
+    document.body.style.overflow = pickerSeat ? "hidden" : "";
     const hint = $("styleHint");
-    hint.hidden = !!pickerSeat || !anyEditable;
-    hint.textContent = roomCode ? "点自己那行左边的棋子可以换样式" : "点每行左边的棋子可以换样式";
+    hint.hidden = !range(np).some(canEditStyle);
+    hint.textContent = roomCode ? "点自己那行的「换棋子」选样式" : "每位玩家都可以点「换棋子」选样式";
     if (!pickerSeat) return;
-    $("pickerTitle").textContent = roomCode ? `选你的棋子（现在是${C(pickerSeat)}）` : `第 ${pickerSeat} 位玩家的棋子（现在是${C(pickerSeat)}）`;
+    $("pickerSub").textContent = roomCode ? `你是第 ${pickerSeat} 手 · ${STYLES[ES[pickerSeat]].zh}` : `正在给第 ${pickerSeat} 位玩家选 · 点上方的棋子切换玩家`;
+    $("pickerNote").textContent = "变淡的样式正在被别人使用";
     const owner = {};
     for (const c of range(np)) if (c !== pickerSeat) owner[ES[c]] = c;
     document.querySelectorAll("#pickGrid button").forEach((b) => {
-      const id = b.dataset.id;
-      b.setAttribute("aria-pressed", String(ES[pickerSeat] === id));
-      b.disabled = !!owner[id];
-      b.title = owner[id] ? `第 ${owner[id]} 位玩家正在用` : STYLES[id].n;
+      const id = b.dataset.id, mine = ES[pickerSeat] === id, who = owner[id];
+      b.setAttribute("aria-pressed", String(mine));
+      b.disabled = !!who;
+      b.setAttribute("aria-label", `${STYLES[id].n} ${STYLES[id].zh}${who ? `，${seatLabel(who)} 正在用` : ""}`);
+      const tag = b.querySelector(".tag");
+      tag.textContent = who ? seatLabel(who) : "";
+      tag.hidden = !who;
+      b.querySelector(".ck").hidden = !mine;
     });
+    drawPreview();
+    if (!wasOpen) requestAnimationFrame(drawPreview);
   }
   function statusText() {
     const n = G.moves.length + 1, online = !!roomCode;
@@ -1258,9 +1368,9 @@ input[type="range"]:disabled{opacity:.5}
     if (G.phase === "end") return "对局结束";
     if (online && !allSeated()) return `等待玩家加入（${seatedCount()}/${NP()}），把邀请链接发给朋友`;
     const lm = G.moves[G.moves.length - 1];
-    const note = lm && lm[0] === -1 ? `${C(lm[1])}方停一手 · ` : "";
-    if (online && me && !isOut(me)) return note + (me === st.turn ? `轮到你（${C(me)}） · 第 ${n} 手` : `等${C(st.turn)}方落子 · 第 ${n} 手`);
-    return note + `${online ? "观战 · " : ""}${C(st.turn)}方落子 · 第 ${n} 手`;
+    const note = lm && lm[0] === -1 ? `${C(lm[1])} 停一手 · ` : "";
+    if (online && me && !isOut(me)) return note + (me === st.turn ? `轮到你（${C(me)}） · 第 ${n} 手` : `等 ${C(st.turn)} 落子 · 第 ${n} 手`);
+    return note + `${online ? "观战 · " : ""}轮到 ${C(st.turn)} · 第 ${n} 手`;
   }
   function renderBanner() {
     const box = $("banner"), acts = $("bannerActs"), np = NP();
@@ -1270,30 +1380,30 @@ input[type="range"]:disabled{opacity:.5}
     if (G.phase === "play" && roomCode && G.undo) {
       if (G.undo === me) { t = "已请求悔棋，等其他人回应"; acts.append(mkBtn("撤回请求", () => apply({ undo: 0 }))); }
       else if (me && !isOut(me)) {
-        t = np === 2 ? "对方请求悔棋" : `${C(G.undo)}方请求悔棋`;
-        s = `同意后退回到${np === 2 ? "对方" : C(G.undo) + "方"}上一手之前`;
+        t = np === 2 ? "对方请求悔棋" : `${C(G.undo)} 请求悔棋`;
+        s = `同意后退回到${np === 2 ? "对方" : " " + C(G.undo) + " "}上一手之前`;
         acts.append(mkBtn("同意", () => answerUndo(true), "primary"), mkBtn("拒绝", () => answerUndo(false)));
-      } else t = `${C(G.undo)}方请求悔棋`;
+      } else t = `${C(G.undo)} 请求悔棋`;
     } else if (G.phase === "score" && sc) {
       if (np === 2) {
         const d = sc.totals[1] - sc.totals[2];
-        t = `${C(1)} ${sc.areas[1]} : ${C(2)} ${sc.areas[2]} + 贴 ${fmt(sc.komi)}` + (d ? ` · ${C(d > 0 ? 1 : 2)}领先 ${fmt(Math.abs(d))}` : " · 持平");
+        t = `${C(1)} ${sc.areas[1]} : ${C(2)} ${sc.areas[2]} + 贴 ${fmt(sc.komi)}` + (d ? ` · ${C(d > 0 ? 1 : 2)} 领先 ${fmt(Math.abs(d))}` : " · 持平");
       } else {
-        t = activeColors().map((c) => `${C(c)} ${sc.areas[c]}`).join(" · ") + (sc.leader ? ` · ${C(sc.leader)}领先` : " · 并列");
+        t = activeColors().map((c) => `${C(c)} ${sc.areas[c]}`).join(" · ") + (sc.leader ? ` · ${C(sc.leader)} 领先` : " · 并列");
       }
       s = "点击死子整块标记，再点一次取消。确认后结束对局。";
-      if (roomCode) s += " " + activeColors().map((c) => `${C(c)}${G.ok[K(c)] ? "已确认" : "未确认"}`).join(" · ");
+      if (roomCode) s += " " + activeColors().map((c) => `${C(c)} ${G.ok[K(c)] ? "已确认" : "未确认"}`).join(" · ");
     } else if (G.phase === "end" && G.result) {
       const r = G.result;
       box.classList.add("final");
       if (r.kind === "resign") {
-        t = `${C(r.winner)}${np === 2 ? "中盘胜" : "胜"}`;
-        s = np === 2 ? `${C(3 - r.winner)}方认输` : "其他玩家都已认输";
+        t = `${C(r.winner)} ${np === 2 ? "中盘胜" : "胜"}`;
+        s = np === 2 ? `${C(3 - r.winner)} 认输` : "其他玩家都已认输";
       } else if (np === 2) {
-        t = r.winner ? `${C(r.winner)}胜 ${fmt(r.margin)} 目` : "和棋";
+        t = r.winner ? `${C(r.winner)} 胜 ${fmt(r.margin)} 目` : "和棋";
         s = `数子：${C(1)} ${fmt(r.areas.b)} · ${C(2)} ${fmt(r.areas.w)}（含贴 ${fmt(G.cfg.komi)}）`;
       } else {
-        t = r.winner ? `${C(r.winner)}胜` : "平局";
+        t = r.winner ? `${C(r.winner)} 胜` : "平局";
         const order = range(np).sort((a, b) => (isOut(a) - isOut(b)) || (r.areas[K(b)] - r.areas[K(a)]));
         s = "数子：" + order.map((c) => `${C(c)} ${fmt(r.areas[K(c)])}${isOut(c) ? "（认输）" : ""}`).join(" · ");
       }
@@ -1322,17 +1432,17 @@ input[type="range"]:disabled{opacity:.5}
     $("createBtn").textContent = busy ? "连接中…" : np === 2 ? "创建房间" : `创建${np === 3 ? "三" : "四"}色房间`;
     $("idleHint").textContent = !dbReady ? "正在连接联机服务…" : db ? "创建后把邀请链接发给朋友，点开就能加入；也可以输入房间号。" : "联机服务还没配置好，现在只能本机对弈。";
     document.querySelectorAll("#colorSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.c === myColor)); b.textContent = C(+b.dataset.c); });
-    document.querySelectorAll("#takeBtns button").forEach((b) => { b.textContent = `我是${C(+b.dataset.c)}方`; });
+    document.querySelectorAll("#takeBtns button").forEach((b) => { b.textContent = `我是 ${C(+b.dataset.c)}`; });
     if (online) {
       $("codeTxt").textContent = roomCode;
       let info;
       if (me === 0) info = "你在观战";
-      else if (!full) info = `你执${C(me)} · 等待玩家加入（${seatedCount()}/${np}）`;
-      else if (!presenceOn) info = `你执${C(me)} · 已连接`;
-      else if (np === 2) info = `你执${C(me)} · ` + (seatOnline(3 - me) ? "对手在线" : "对手不在线");
+      else if (!full) info = `你执 ${C(me)} · 等待玩家加入（${seatedCount()}/${np}）`;
+      else if (!presenceOn) info = `你执 ${C(me)} · 已连接`;
+      else if (np === 2) info = `你执 ${C(me)} · ` + (seatOnline(3 - me) ? "对手在线" : "对手不在线");
       else {
         const others = range(np).filter((c) => c !== me);
-        info = `你执${C(me)} · 其他玩家在线 ${others.filter(seatOnline).length}/${others.length}`;
+        info = `你执 ${C(me)} · 其他玩家在线 ${others.filter(seatOnline).length}/${others.length}`;
       }
       if (isOut(me)) info += " · 你已认输";
       $("roomInfo").textContent = info;
@@ -1347,8 +1457,9 @@ input[type="range"]:disabled{opacity:.5}
       const chipBtn = $("chipBtn" + c), chip = $("chip" + c), editable = canEditStyle(c);
       chipBtn.disabled = !editable;
       chipBtn.title = editable ? "换棋子" : C(c);
-      chipBtn.setAttribute("aria-label", editable ? `换棋子，当前${C(c)}` : C(c));
+      chipBtn.setAttribute("aria-label", editable ? `换棋子，当前 ${C(c)}` : C(c));
       chipBtn.classList.toggle("picking", pickerSeat === c);
+      $("chg" + c).hidden = !editable;
       if (chip.dataset.style !== ES[c]) { drawChip(chip, ES[c], 22, 9); chip.dataset.style = ES[c]; }
       row.classList.toggle("on", phase === "play" && st.turn === c && (!online || full) && !isOut(c));
       row.classList.toggle("out", isOut(c));
@@ -1462,7 +1573,15 @@ input[type="range"]:disabled{opacity:.5}
 
   $("tabLocal").addEventListener("click", () => { tab = "local"; roomErr(""); if (roomCode) leaveRoom(); else render(); });
   $("tabOnline").addEventListener("click", () => { tab = "online"; render(); });
-  $("pickerClose").addEventListener("click", () => { pickerSeat = 0; render(); });
+  $("pickerClose").addEventListener("click", closePicker);
+  $("picker").addEventListener("click", (e) => { if (e.target === e.currentTarget) closePicker(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && pickerSeat) closePicker(); });
+  $("pv").addEventListener("click", (e) => {
+    if (roomCode || !pickerSeat) return;
+    const rect = e.currentTarget.getBoundingClientRect(), c = Math.floor(((e.clientX - rect.left) / rect.width) * NP()) + 1;
+    if (canEditStyle(c)) { pickerSeat = c; render(); }
+  });
+  new ResizeObserver(() => drawPreview()).observe($("pvWrap"));
   buildPicker();
   $("createBtn").addEventListener("click", createRoom);
   $("joinForm").addEventListener("submit", (e) => { e.preventDefault(); joinRoom($("codeIn").value); });
