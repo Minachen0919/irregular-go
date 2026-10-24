@@ -73,6 +73,8 @@ h1{margin:0; font-family:var(--display); font-weight:400; font-size:31px; letter
 .linkbtn{background:none; border:0; padding:0; font:inherit; font-size:12.5px; color:var(--muted); text-decoration:underline; text-underline-offset:3px; cursor:pointer; justify-self:start}
 
 .players{display:grid; gap:6px}
+.plist{display:grid; gap:6px}
+.player.out{opacity:.5}
 .player{
   display:grid; grid-template-columns:22px minmax(0,1fr) auto; align-items:center; gap:10px;
   padding:10px 12px; border-radius:10px; border:1px solid transparent; transition:background-color .2s, border-color .2s;
@@ -81,6 +83,8 @@ h1{margin:0; font-family:var(--display); font-weight:400; font-size:31px; letter
 .chip{width:20px; height:20px; border-radius:50%}
 .chip.b{background:radial-gradient(circle at 35% 30%, #6c6c69, #1c1c1b 55%, #060606)}
 .chip.w{background:radial-gradient(circle at 35% 30%, #fff, #ece8df 55%, #b9b3a5); box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
+.chip.r{background:radial-gradient(circle at 35% 30%, #F08C78, #C2412D 55%, #6F1C12)}
+.chip.u{background:radial-gradient(circle at 35% 30%, #8FB0E6, #3460A8 55%, #15295A)}
 .pname{font-weight:600; display:flex; align-items:center; gap:8px; min-width:0}
 .who{font-size:12px; font-weight:400; color:var(--muted); display:inline-flex; align-items:center; gap:5px}
 .dot{width:7px; height:7px; border-radius:50%; border:1.5px solid var(--muted)}
@@ -124,7 +128,7 @@ button:focus-visible, input:focus-visible{outline:2px solid var(--accent); outli
 .seg{display:grid; grid-template-columns:repeat(3,1fr); gap:3px; padding:3px; border:1px solid var(--rule); border-radius:9px; background:var(--surface)}
 .seg.two{grid-template-columns:repeat(2,1fr)}
 .seg.four{grid-template-columns:repeat(4,1fr)}
-.seg.mini{width:120px}
+.seg.mini{grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:44px}
 .seg button{font-family:var(--mono); font-size:13px; border:0; background:transparent; color:var(--muted); padding:6px 0; border-radius:6px; cursor:pointer}
 .seg.text button{font-family:var(--body)}
 .seg button[aria-pressed="true"]{background:var(--btn); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.14)}
@@ -170,7 +174,7 @@ input[type="range"]:disabled{opacity:.5}
       <div class="seal" aria-hidden="true">異</div>
       <div>
         <h1>异形棋盘</h1>
-        <p class="sub">四周随机侵蚀的围棋盘 · 可联机</p>
+        <p class="sub">随机异形围棋盘 · 2 到 4 色 · 可联机</p>
       </div>
     </header>
 
@@ -182,10 +186,7 @@ input[type="range"]:disabled{opacity:.5}
       <div class="room-body" id="roomIdle" hidden>
         <div class="row">
           <span class="label">我执</span>
-          <div class="seg two mini text" id="colorSeg" role="group" aria-label="我执">
-            <button type="button" data-c="1" aria-pressed="true">黑</button>
-            <button type="button" data-c="2" aria-pressed="false">白</button>
-          </div>
+          <div class="seg mini text" id="colorSeg" role="group" aria-label="我执"></div>
         </div>
         <button class="btn primary" id="createBtn" type="button">创建房间</button>
         <form class="join" id="joinForm">
@@ -202,8 +203,7 @@ input[type="range"]:disabled{opacity:.5}
         <p class="hint" id="roomInfo"></p>
         <div class="takeover" id="takeover" hidden>
           <span class="hint">换了浏览器？回到自己的座位：</span>
-          <button class="btn" type="button" data-seat="1">我是黑方</button>
-          <button class="btn" type="button" data-seat="2">我是白方</button>
+          <span class="takeover" id="takeBtns"></span>
         </div>
         <button class="linkbtn" id="leaveBtn" type="button">离开房间</button>
       </div>
@@ -211,16 +211,7 @@ input[type="range"]:disabled{opacity:.5}
     </section>
 
     <section class="players" aria-live="polite">
-      <div class="player" id="pB">
-        <span class="chip b"></span>
-        <span class="pname">黑 <span class="who" id="whoB"></span><span class="pill">落子中</span></span>
-        <span class="cap"><span id="capLB">提</span><b id="capB">0</b></span>
-      </div>
-      <div class="player" id="pW">
-        <span class="chip w"></span>
-        <span class="pname">白 <span class="who" id="whoW"></span><span class="pill">落子中</span></span>
-        <span class="cap"><span id="capLW">提</span><b id="capW">0</b></span>
-      </div>
+      <div class="plist" id="plist"></div>
       <div class="status" id="status"></div>
     </section>
 
@@ -251,6 +242,14 @@ input[type="range"]:disabled{opacity:.5}
     <section class="shape">
       <h2>棋盘设置</h2>
       <div class="field">
+        <span class="label">颜色数</span>
+        <div class="seg text" id="playersSeg" role="group" aria-label="颜色数">
+          <button type="button" data-p="2" aria-pressed="true">双色</button>
+          <button type="button" data-p="3" aria-pressed="false">三色</button>
+          <button type="button" data-p="4" aria-pressed="false">四色</button>
+        </div>
+      </div>
+      <div class="field">
         <span class="label">路数</span>
         <div class="seg" id="sizeSeg" role="group" aria-label="路数">
           <button type="button" data-n="9" aria-pressed="false">9</button>
@@ -264,7 +263,8 @@ input[type="range"]:disabled{opacity:.5}
         <div class="scale"><span>方正</span><span>破碎</span></div>
       </div>
       <div class="row"><label class="label" for="holes">内部空洞</label><input type="checkbox" class="switch" id="holes" role="switch"></div>
-      <div class="field">
+      <p class="hint" id="multiHint" hidden></p>
+      <div class="field" id="komiField">
         <span class="label">贴目（中国规则数子）</span>
         <div class="seg four" id="komiSeg" role="group" aria-label="贴目">
           <button type="button" data-k="0" aria-pressed="false">0</button>
@@ -288,6 +288,20 @@ input[type="range"]:disabled{opacity:.5}
   const CODE_CH = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const KOMIS = [0, 5.5, 6.5, 7.5];
   const FB_VER = "10.12.2";
+  const COLORS = [null, { key: "b", name: "黑" }, { key: "w", name: "白" }, { key: "r", name: "红" }, { key: "u", name: "蓝" }];
+  const KEYS = ["b", "w", "r", "u"];
+  const STONE = {
+    1: ["#6e6e6a", "#2a2a28", "#0a0a09"],
+    2: ["#ffffff", "#eeebe3", "#bbb5a7"],
+    3: ["#F08C78", "#C2412D", "#6F1C12"],
+    4: ["#8FB0E6", "#3460A8", "#15295A"],
+  };
+  const MARK = { 1: "#141413", 2: "#F7F5EF", 3: "#B8392A", 4: "#2F5597" };
+  const K = (c) => COLORS[c].key;
+  const C = (c) => (COLORS[c] ? COLORS[c].name : "");
+  const allFalse = () => ({ b: false, w: false, r: false, u: false });
+  const range = (n) => Array.from({ length: n }, (_, i) => i + 1);
+  const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
   const ls = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
@@ -299,11 +313,10 @@ input[type="range"]:disabled{opacity:.5}
   })();
   const rand5 = () => 10000 + Math.floor(Math.random() * 89999);
   const fmt = (x) => String(Math.round(x * 10) / 10);
-  const C = (c) => (c === 1 ? "黑" : "白");
 
   /* ---------- game record ---------- */
   function freshGame(cfg) {
-    return { v: 1, cfg: { ...cfg }, moves: [], seats: { b: "", w: "" }, phase: "play", dead: [], ok: { b: false, w: false }, undo: 0, result: null };
+    return { v: 2, cfg: { ...cfg }, moves: [], seats: { b: "", w: "", r: "", u: "" }, phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null };
   }
   function merge(a, b) {
     const out = a && typeof a === "object" && !Array.isArray(a) ? { ...a } : {};
@@ -316,26 +329,36 @@ input[type="range"]:disabled{opacity:.5}
   }
   function sanitize(d) {
     d = d && typeof d === "object" ? d : {};
-    const g = freshGame({ N: 19, seed: 10000, rough: 55, holes: false, komi: 7.5 });
+    const g = freshGame({ N: 19, seed: 10000, rough: 55, holes: false, komi: 7.5, players: 2 });
     const c = d.cfg && typeof d.cfg === "object" ? d.cfg : {};
     g.cfg.N = [9, 13, 19].includes(c.N) ? c.N : 19;
     g.cfg.seed = Number.isFinite(c.seed) ? Math.floor(c.seed) : 10000;
     g.cfg.rough = Number.isFinite(c.rough) ? Math.max(0, Math.min(100, Math.round(c.rough))) : 55;
     g.cfg.holes = !!c.holes;
     g.cfg.komi = KOMIS.includes(c.komi) ? c.komi : 7.5;
-    const max = g.cfg.N * g.cfg.N;
-    g.moves = Array.isArray(d.moves) ? d.moves.filter((m) => Array.isArray(m) && Number.isInteger(m[0]) && m[0] >= -1 && m[0] < max && (m[1] === 1 || m[1] === 2)).map((m) => [m[0], m[1]]) : [];
+    g.cfg.players = [2, 3, 4].includes(c.players) ? c.players : 2;
+    const np = g.cfg.players, max = g.cfg.N * g.cfg.N;
+    g.moves = Array.isArray(d.moves) ? d.moves.filter((m) => Array.isArray(m) && Number.isInteger(m[0]) && m[0] >= -1 && m[0] < max && Number.isInteger(m[1]) && m[1] >= 1 && m[1] <= np).map((m) => [m[0], m[1]]) : [];
     const s = d.seats && typeof d.seats === "object" ? d.seats : {};
-    g.seats = { b: typeof s.b === "string" ? s.b.slice(0, 40) : "", w: typeof s.w === "string" ? s.w.slice(0, 40) : "" };
+    const ok = d.ok && typeof d.ok === "object" ? d.ok : {};
+    const out = d.resigned && typeof d.resigned === "object" ? d.resigned : {};
+    for (const k of KEYS) {
+      g.seats[k] = typeof s[k] === "string" ? s[k].slice(0, 40) : "";
+      g.ok[k] = ok[k] === true;
+      g.resigned[k] = out[k] === true;
+    }
     g.phase = ["play", "score", "end"].includes(d.phase) ? d.phase : "play";
     g.dead = Array.isArray(d.dead) ? d.dead.filter((x) => Number.isInteger(x) && x >= 0 && x < max) : [];
-    const ok = d.ok && typeof d.ok === "object" ? d.ok : {};
-    g.ok = { b: ok.b === true, w: ok.w === true };
-    g.undo = d.undo === 1 || d.undo === 2 ? d.undo : 0;
+    g.undo = Number.isInteger(d.undo) && d.undo >= 1 && d.undo <= np ? d.undo : 0;
     const r = d.result;
     if (r && typeof r === "object" && (r.kind === "resign" || r.kind === "score")) {
-      g.result = { kind: r.kind, winner: [0, 1, 2].includes(r.winner) ? r.winner : 0 };
-      if (r.kind === "score") { g.result.b = +r.b || 0; g.result.w = +r.w || 0; g.result.margin = +r.margin || 0; }
+      g.result = { kind: r.kind, winner: Number.isInteger(r.winner) && r.winner >= 0 && r.winner <= np ? r.winner : 0 };
+      if (r.kind === "score") {
+        const src = r.areas && typeof r.areas === "object" ? r.areas : { b: r.b, w: r.w };
+        g.result.areas = {};
+        for (const k of KEYS) g.result.areas[k] = Number.isFinite(+src[k]) ? +src[k] : 0;
+        g.result.margin = Number.isFinite(+r.margin) ? +r.margin : 0;
+      }
     }
     if (g.phase === "end" && !g.result) g.phase = "play";
     return g;
@@ -346,8 +369,8 @@ input[type="range"]:disabled{opacity:.5}
   let roomCode = "", ref = null, unsub = null, pending = null, inflight = false, busy = false;
   let F = null, db = null, dbReady = false;
   let presRef = null, presUnsubs = [], presenceOn = false, peersMap = {}, lastPresence = "";
-  let tab = "local", myColor = 1, me = 0;
-  let G = loadLocal() || freshGame({ N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5 });
+  let tab = "local", myColor = 1, me = 0, builtPlayers = 0;
+  let G = loadLocal() || freshGame({ N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5, players: 2 });
   let showCoords = ls.get("igo.coords") !== "0";
   let SH = { key: "" }, st = null, sc = null;
   let hover = -1, flashTimer = 0, geom = null, staticCv = null, woodCache = { key: "", cv: null };
@@ -449,7 +472,7 @@ input[type="range"]:disabled{opacity:.5}
     return true;
   }
 
-  /* ---------- rules ---------- */
+  /* ---------- rules (2 to 4 colours) ---------- */
   function group(b, i) {
     const color = b[i], seen = new Set([i]), libs = new Set(), s = [i];
     while (s.length) {
@@ -461,38 +484,41 @@ input[type="range"]:disabled{opacity:.5}
     }
     return { stones: [...seen], libs: libs.size };
   }
-  function tryPlace(board, i, c, ko) {
+  // positional superko: a move may not recreate any earlier board position
+  function tryPlace(board, i, c, seen) {
     if (!SH.act[i] || board[i]) return { ok: false, why: "taken" };
-    if (i === ko) return { ok: false, why: "ko" };
-    const b = board.slice(), opp = 3 - c;
-    let taken = 0, takenIdx = -1;
+    const b = board.slice();
+    let taken = 0;
     b[i] = c;
     for (const n of SH.adj[i]) {
-      if (b[n] !== opp) continue;
+      if (!b[n] || b[n] === c) continue;
       const g = group(b, n);
-      if (g.libs === 0) { for (const s of g.stones) b[s] = 0; taken += g.stones.length; takenIdx = g.stones[0]; }
+      if (g.libs === 0) { for (const s of g.stones) b[s] = 0; taken += g.stones.length; }
     }
     const mine = group(b, i);
     if (mine.libs === 0) return { ok: false, why: "suicide" };
-    return { ok: true, board: b, taken, ko: taken === 1 && mine.stones.length === 1 && mine.libs === 1 ? takenIdx : -1 };
+    const key = b.join("");
+    if (seen && seen.has(key)) return { ok: false, why: "ko" };
+    return { ok: true, board: b, taken, key };
   }
   function replay(moves) {
-    const board = new Int8Array(SH.N * SH.N), caps = { 1: 0, 2: 0 };
-    let ko = -1, last = -1, turn = 1;
+    const board = new Int8Array(SH.N * SH.N), caps = [0, 0, 0, 0, 0];
+    const seen = new Set([board.join("")]);
+    let last = -1, lastColor = 0;
     for (const [p, c] of moves) {
-      if (p < 0) { ko = -1; last = -1; turn = 3 - c; continue; }
-      const r = tryPlace(board, p, c, ko);
+      lastColor = c;
+      if (p < 0) { last = -1; continue; }
+      const r = tryPlace(board, p, c, seen);
       if (!r.ok) continue;
-      board.set(r.board); caps[c] += r.taken; ko = r.ko; last = p; turn = 3 - c;
+      board.set(r.board); caps[c] += r.taken; last = p; seen.add(r.key);
     }
-    return { board, caps, ko, last, turn };
+    return { board, caps, last, lastColor, seen };
   }
-  function score(board, deadArr, komi) {
-    const N = SH.N, b = board.slice();
+  function score(board, deadArr) {
+    const N = SH.N, b = board.slice(), np = NP();
     for (const d of deadArr) b[d] = 0;
-    const terr = new Int8Array(N * N), seen = new Uint8Array(N * N);
-    let bA = 0, wA = 0;
-    for (let i = 0; i < b.length; i++) { if (!SH.act[i]) continue; if (b[i] === 1) bA++; else if (b[i] === 2) wA++; }
+    const terr = new Int8Array(N * N), seen = new Uint8Array(N * N), areas = [0, 0, 0, 0, 0];
+    for (let i = 0; i < b.length; i++) if (SH.act[i] && b[i]) areas[b[i]]++;
     for (let i = 0; i < b.length; i++) {
       if (!SH.act[i] || b[i] || seen[i]) continue;
       const region = [], s = [i]; seen[i] = 1; let border = 0;
@@ -500,15 +526,24 @@ input[type="range"]:disabled{opacity:.5}
         const p = s.pop(); region.push(p);
         for (const q of SH.adj[p]) {
           if (b[q] === 0) { if (!seen[q]) { seen[q] = 1; s.push(q); } }
-          else border |= b[q];
+          else border |= 1 << (b[q] - 1);
         }
       }
-      if (border === 1 || border === 2) {
-        for (const p of region) terr[p] = border;
-        if (border === 1) bA += region.length; else wA += region.length;
+      if (border && !(border & (border - 1))) {
+        const o = 32 - Math.clz32(border);
+        for (const p of region) terr[p] = o;
+        areas[o] += region.length;
       }
     }
-    return { bArea: bA, wArea: wA, komi, b: bA, w: wA + komi, terr };
+    const komi = np === 2 ? G.cfg.komi : 0, totals = areas.slice();
+    totals[2] += komi;
+    let leader = 0, top = -Infinity, second = -Infinity;
+    for (const c of activeColors()) {
+      if (totals[c] > top) { second = top; top = totals[c]; leader = c; }
+      else if (totals[c] === top) { second = top; leader = 0; }
+      else if (totals[c] > second) second = totals[c];
+    }
+    return { areas, totals, terr, komi, leader, margin: Number.isFinite(second) ? top - second : 0 };
   }
 
   /* ---------- rendering ---------- */
@@ -651,8 +686,8 @@ input[type="range"]:disabled{opacity:.5}
       g.shadowOffsetX = r * 0.1; g.shadowOffsetY = r * 0.17;
     }
     const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r * 1.05);
-    if (c === 1) { gr.addColorStop(0, "#6e6e6a"); gr.addColorStop(0.35, "#2a2a28"); gr.addColorStop(1, "#0a0a09"); }
-    else { gr.addColorStop(0, "#ffffff"); gr.addColorStop(0.55, "#eeebe3"); gr.addColorStop(1, "#bbb5a7"); }
+    const [a, b, d] = STONE[c];
+    gr.addColorStop(0, a); gr.addColorStop(c === 2 ? 0.55 : 0.35, b); gr.addColorStop(1, d);
     g.fillStyle = gr;
     g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
     g.restore();
@@ -678,14 +713,15 @@ input[type="range"]:disabled{opacity:.5}
         const o = sc.terr[i];
         if (!o || (st.board[i] && !dead.has(i))) continue;
         const [x, y] = P(i);
-        ctx.fillStyle = o === 1 ? "#141413" : "#F7F5EF";
+        ctx.fillStyle = MARK[o];
         ctx.fillRect(x - q / 2, y - q / 2, q, q);
         if (o === 2) { ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.lineWidth = 1; ctx.strokeRect(x - q / 2, y - q / 2, q, q); }
       }
     }
     if (G.phase === "play" && st.last >= 0 && st.board[st.last]) {
       const [x, y] = P(st.last);
-      ctx.strokeStyle = "#D4472E"; ctx.lineWidth = Math.max(1.5, step * 0.075);
+      ctx.strokeStyle = st.board[st.last] >= 3 ? "#FFFFFF" : "#D4472E";
+      ctx.lineWidth = Math.max(1.5, step * 0.075);
       ctx.beginPath(); ctx.arc(x, y, r * 0.4, 0, 7); ctx.stroke();
     }
     if (hover >= 0 && !st.board[hover] && canPlay()) { const [x, y] = P(hover); stone(ctx, x, y, r, st.turn, 0.42); }
@@ -707,19 +743,20 @@ input[type="range"]:disabled{opacity:.5}
       return null;
     }
   }
-  // moves and dead stones travel as compact strings: Realtime Database mangles empty and nested arrays
-  const encMoves = (ms) => ms.map(([p, c]) => (p + 1) * 2 + (c - 1)).join(",");
-  const decMoves = (s) => String(s).split(",").filter((x) => x !== "").map(Number).filter((n) => Number.isInteger(n) && n >= 0).map((n) => [Math.floor(n / 2) - 1, (n % 2) + 1]);
+  // moves and dead stones travel as compact strings: Realtime Database mangles empty and nested arrays.
+  // v2 packs (point + 1) * 4 + colour index; v1 rooms used * 2 for two colours.
+  const encMoves = (ms) => ms.map(([p, c]) => (p + 1) * 4 + (c - 1)).join(",");
+  const decMoves = (s, base) => String(s).split(",").filter((x) => x !== "").map(Number).filter((n) => Number.isInteger(n) && n >= 0).map((n) => [Math.floor(n / base) - 1, (n % base) + 1]);
   function toWire(o) {
     const w = { ...o };
-    if (Array.isArray(w.moves)) w.moves = encMoves(w.moves);
+    if (Array.isArray(w.moves)) { w.moves = encMoves(w.moves); w.v = 2; }
     if (Array.isArray(w.dead)) w.dead = w.dead.join(",");
     return w;
   }
   function fromWire(v) {
     if (!v || typeof v !== "object") return v;
     const o = { ...v };
-    o.moves = typeof v.moves === "string" ? decMoves(v.moves) : [];
+    o.moves = typeof v.moves === "string" ? decMoves(v.moves, v.v >= 2 ? 4 : 2) : [];
     o.dead = typeof v.dead === "string" ? v.dead.split(",").filter((x) => x !== "").map(Number) : [];
     return o;
   }
@@ -748,12 +785,21 @@ input[type="range"]:disabled{opacity:.5}
   }
 
   /* ---------- state flow ---------- */
-  const seatOf = (g) => (!roomCode ? 0 : g.seats.b === cid ? 1 : g.seats.w === cid ? 2 : 0);
-  const bothSeated = () => !!(G.seats.b && G.seats.w);
+  const NP = () => G.cfg.players;
+  const seatOf = (g) => { if (!roomCode) return 0; for (const c of range(g.cfg.players)) if (g.seats[K(c)] === cid) return c; return 0; };
+  const allSeated = () => range(NP()).every((c) => G.seats[K(c)]);
+  const seatedCount = () => range(NP()).filter((c) => G.seats[K(c)]).length;
+  const isOut = (c) => !!(c && G.resigned[K(c)]);
+  const activeColors = () => range(NP()).filter((c) => !isOut(c));
+  function nextActive(c) {
+    const n = NP();
+    for (let k = 1; k <= n; k++) { const x = ((c - 1 + k) % n) + 1; if (!isOut(x)) return x; }
+    return c;
+  }
   function canPlay() {
     if (G.phase !== "play") return false;
     if (!roomCode) return true;
-    return bothSeated() && me === st.turn;
+    return allSeated() && me === st.turn && !isOut(me);
   }
   const shapeLocked = () => !!roomCode && (me === 0 || (G.moves.length > 0 && G.phase !== "end"));
 
@@ -761,7 +807,9 @@ input[type="range"]:disabled{opacity:.5}
     const changed = ensureShape(G.cfg);
     me = seatOf(G);
     st = replay(G.moves);
-    sc = G.phase === "score" || (G.phase === "end" && G.result && G.result.kind === "score") ? score(st.board, G.dead, G.cfg.komi) : null;
+    st.turn = nextActive(st.lastColor || NP());
+    sc = G.phase === "score" || (G.phase === "end" && G.result && G.result.kind === "score") ? score(st.board, G.dead) : null;
+    if (builtPlayers !== NP()) buildPlayers();
     if (changed || !geom) layout(); else draw();
     render();
   }
@@ -803,7 +851,7 @@ input[type="range"]:disabled{opacity:.5}
   }
 
   /* ---------- online rooms ---------- */
-  function roomErr(msg) { const el = $("roomErr"); el.textContent = msg || ""; el.hidden = !msg; }
+  function roomErr(msg) { const e = $("roomErr"); e.textContent = msg || ""; e.hidden = !msg; }
   function setHash(code) {
     try { history.replaceState(null, "", code ? "#" + code : location.pathname + location.search); } catch (e) {}
   }
@@ -838,7 +886,7 @@ input[type="range"]:disabled{opacity:.5}
       }
       if (!code) throw { code: "busy" };
       const g = freshGame(G.cfg);
-      g.seats = myColor === 1 ? { b: cid, w: "" } : { b: "", w: cid };
+      g.seats[K(Math.min(myColor, g.cfg.players))] = cid;
       g.at = Date.now();
       await r.set(g);
       busy = false;
@@ -859,11 +907,12 @@ input[type="range"]:disabled{opacity:.5}
       const s = await r.get();
       if (!s.exists) throw { code: "nf" };
       let g = sanitize(merge({}, s.data()));
-      if (g.seats.b !== cid && g.seats.w !== cid) {
-        const seat = !g.seats.b ? "b" : !g.seats.w ? "w" : "";
+      const cols = range(g.cfg.players);
+      if (!cols.some((c) => g.seats[K(c)] === cid)) {
+        const seat = cols.find((c) => !g.seats[K(c)]);
         if (seat) {
-          await r.update({ seats: { [seat]: cid }, at: Date.now() });
-          g = merge(g, { seats: { [seat]: cid } });
+          await r.update({ seats: { [K(seat)]: cid }, at: Date.now() });
+          g = merge(g, { seats: { [K(seat)]: cid } });
         }
       }
       busy = false;
@@ -914,8 +963,8 @@ input[type="range"]:disabled{opacity:.5}
 
   /* ---------- actions ---------- */
   function flash(msg) {
-    const el = $("status");
-    el.textContent = msg; el.classList.add("warn");
+    const e = $("status");
+    e.textContent = msg; e.classList.add("warn");
     clearTimeout(flashTimer);
     flashTimer = setTimeout(() => { flashTimer = 0; render(); }, 2200);
   }
@@ -924,43 +973,46 @@ input[type="range"]:disabled{opacity:.5}
     if (G.phase !== "play") return;
     if (roomCode) {
       if (me === 0) return flash("你在观战，不能落子");
-      if (!bothSeated()) return flash("等对手加入后才能开始");
-      if (me !== st.turn) return flash("还没轮到你");
+      if (isOut(me)) return flash("你已经认输了");
+      if (!allSeated()) return flash("人到齐后才能开始");
+      if (me !== st.turn) return flash(`还没轮到你，现在是${C(st.turn)}方`);
     }
     if (st.board[i]) return;
-    const r = tryPlace(st.board, i, st.turn, st.ko);
-    if (!r.ok) return flash(r.why === "ko" ? "打劫：不能立刻提回，先在别处下一手" : "禁着点：这里落子没有气");
+    const r = tryPlace(st.board, i, st.turn, st.seen);
+    if (!r.ok) return flash(r.why === "ko" ? "打劫：不能还原之前出现过的局面，先在别处下一手" : "禁着点：这里落子没有气");
     hover = -1;
     apply({ moves: [...G.moves, [i, st.turn]], undo: 0 });
   }
   function toggleDead(i) {
-    if (roomCode && me === 0) return;
+    if (roomCode && (me === 0 || isOut(me))) return;
     if (!st.board[i]) return;
     const chain = group(st.board, i).stones, set = new Set(G.dead), isDead = set.has(i);
     for (const s of chain) { if (isDead) set.delete(s); else set.add(s); }
-    apply({ dead: [...set], ok: { b: false, w: false } });
+    apply({ dead: [...set], ok: allFalse() });
   }
   function pass() {
     if (!canPlay()) return;
-    const lm = G.moves[G.moves.length - 1], moves = [...G.moves, [-1, st.turn]];
+    const moves = [...G.moves, [-1, st.turn]];
+    let run = 0;
+    for (let j = moves.length - 1; j >= 0 && moves[j][0] === -1; j--) run++;
     hover = -1;
-    if (lm && lm[0] === -1) apply({ moves, phase: "score", dead: [], ok: { b: false, w: false }, undo: 0 });
+    if (run >= activeColors().length) apply({ moves, phase: "score", dead: [], ok: allFalse(), undo: 0 });
     else apply({ moves, undo: 0 });
   }
   function undo() {
     if (!roomCode) {
-      if (G.phase === "end" && G.result && G.result.kind === "resign") return apply({ phase: "play", result: null });
+      if (G.phase === "end" && G.result && G.result.kind === "resign") return apply({ phase: "play", result: null, resigned: allFalse() });
       if (!G.moves.length) return;
-      return apply({ moves: G.moves.slice(0, -1), phase: "play", dead: [], ok: { b: false, w: false }, result: null });
+      return apply({ moves: G.moves.slice(0, -1), phase: "play", dead: [], ok: allFalse(), result: null });
     }
-    if (me === 0 || G.phase !== "play") return;
+    if (me === 0 || isOut(me) || G.phase !== "play") return;
     if (G.undo === me) return apply({ undo: 0 });
     if (!G.moves.some((m) => m[1] === me)) return flash("你还没下过子");
     apply({ undo: me });
   }
   function answerUndo(yes) {
     const req = G.undo;
-    if (!req || req === me || me === 0) return;
+    if (!req || req === me || me === 0 || isOut(me)) return;
     if (!yes) return apply({ undo: 0 });
     let idx = -1;
     for (let k = G.moves.length - 1; k >= 0; k--) if (G.moves[k][1] === req) { idx = k; break; }
@@ -968,35 +1020,41 @@ input[type="range"]:disabled{opacity:.5}
   }
   function resign() {
     const loser = roomCode ? me : st.turn;
-    if (!loser) return;
-    apply({ phase: "end", result: { kind: "resign", winner: 3 - loser }, undo: 0 });
+    if (!loser || isOut(loser)) return;
+    const left = activeColors().filter((c) => c !== loser);
+    const patch = { resigned: { [K(loser)]: true }, undo: 0 };
+    if (left.length === 1) { patch.phase = "end"; patch.result = { kind: "resign", winner: left[0] }; }
+    apply(patch);
   }
   function confirmScore() {
     if (!sc) return;
-    const res = { kind: "score", b: sc.b, w: sc.w, winner: sc.b > sc.w ? 1 : sc.w > sc.b ? 2 : 0, margin: Math.abs(sc.b - sc.w) };
+    const res = { kind: "score", winner: sc.leader, areas: { b: sc.totals[1], w: sc.totals[2], r: sc.totals[3], u: sc.totals[4] }, margin: sc.margin };
     if (!roomCode) return apply({ phase: "end", result: res });
-    if (me === 0) return;
-    const key = me === 1 ? "b" : "w", other = me === 1 ? "w" : "b";
-    if (G.ok[other]) apply({ ok: { [key]: true }, phase: "end", result: res });
-    else apply({ ok: { [key]: true } });
+    if (me === 0 || isOut(me)) return;
+    const others = activeColors().filter((c) => c !== me);
+    if (others.every((c) => G.ok[K(c)])) apply({ ok: { [K(me)]: true }, phase: "end", result: res });
+    else apply({ ok: { [K(me)]: true } });
   }
-  function rematch(swap) {
-    const patch = { moves: [], phase: "play", dead: [], ok: { b: false, w: false }, undo: 0, result: null };
-    if (swap && roomCode) patch.seats = { b: G.seats.w || "", w: G.seats.b || "" };
+  function rematch(rotate) {
+    const patch = { moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null };
+    if (rotate && roomCode) {
+      const n = NP(), seats = {};
+      for (const c of range(n)) seats[K(c)] = G.seats[K(c === 1 ? n : c - 1)] || "";
+      patch.seats = seats;
+    }
     hover = -1;
     apply(patch);
   }
   function setCfg(part) {
     if (shapeLocked()) return;
     hover = -1;
-    apply({ cfg: part, moves: [], phase: "play", dead: [], ok: { b: false, w: false }, undo: 0, result: null });
+    apply({ cfg: part, moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null });
   }
   function takeSeat(c) {
     if (!roomCode) return;
-    const key = c === 1 ? "b" : "w", other = c === 1 ? "w" : "b";
-    const patch = { seats: { [key]: cid } };
-    if (G.seats[other] === cid) patch.seats[other] = "";
-    apply(patch);
+    const seats = { [K(c)]: cid };
+    for (const k of KEYS) if (k !== K(c) && G.seats[k] === cid) seats[k] = "";
+    apply({ seats });
   }
 
   // two-step confirm for irreversible buttons
@@ -1013,45 +1071,84 @@ input[type="range"]:disabled{opacity:.5}
   }
 
   /* ---------- panel ---------- */
+  function mkBtn(label, fn, cls) {
+    const b = el("button", "btn" + (cls ? " " + cls : ""));
+    b.type = "button"; b.textContent = label;
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function buildPlayers() {
+    const n = NP(), box = $("plist");
+    box.replaceChildren();
+    for (const c of range(n)) {
+      const row = el("div", "player"); row.id = "p" + c;
+      const name = el("span", "pname");
+      const who = el("span", "who"); who.id = "who" + c;
+      const pill = el("span", "pill"); pill.textContent = "落子中";
+      name.append(document.createTextNode(C(c) + " "), who, pill);
+      const cap = el("span", "cap"), capL = el("span"), capV = el("b");
+      capL.id = "capL" + c; capV.id = "cap" + c;
+      cap.append(capL, capV);
+      row.append(el("span", "chip " + K(c)), name, cap);
+      box.append(row);
+    }
+    const seg = $("colorSeg");
+    seg.replaceChildren();
+    for (const c of range(n)) {
+      const b = el("button"); b.type = "button"; b.dataset.c = c; b.textContent = C(c);
+      b.addEventListener("click", () => { myColor = c; render(); });
+      seg.append(b);
+    }
+    const tk = $("takeBtns");
+    tk.replaceChildren();
+    for (const c of range(n)) tk.append(mkBtn(`我是${C(c)}方`, () => takeSeat(c)));
+    builtPlayers = n;
+  }
   function statusText() {
     const n = G.moves.length + 1, online = !!roomCode;
     if (G.phase === "score") return "数子阶段";
     if (G.phase === "end") return "对局结束";
-    if (online && !bothSeated()) return "等待对手加入，把邀请链接发给朋友";
+    if (online && !allSeated()) return `等待玩家加入（${seatedCount()}/${NP()}），把邀请链接发给朋友`;
     const lm = G.moves[G.moves.length - 1];
     const note = lm && lm[0] === -1 ? `${C(lm[1])}方停一手 · ` : "";
-    if (online && me) return note + (me === st.turn ? `轮到你 · 第 ${n} 手` : `等对手落子 · 第 ${n} 手`);
+    if (online && me && !isOut(me)) return note + (me === st.turn ? `轮到你（${C(me)}） · 第 ${n} 手` : `等${C(st.turn)}方落子 · 第 ${n} 手`);
     return note + `${online ? "观战 · " : ""}${C(st.turn)}方落子 · 第 ${n} 手`;
   }
-  function resultText(r) {
-    if (r.kind === "resign") return `${C(r.winner)}中盘胜`;
-    if (!r.winner) return "和棋";
-    return `${C(r.winner)}胜 ${fmt(r.margin)} 目`;
-  }
-  function mkBtn(label, fn, cls) {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "btn" + (cls ? " " + cls : ""); b.textContent = label;
-    b.addEventListener("click", fn);
-    return b;
-  }
   function renderBanner() {
-    const box = $("banner"), acts = $("bannerActs");
+    const box = $("banner"), acts = $("bannerActs"), np = NP();
     let t = "", s = "";
     acts.replaceChildren();
     box.classList.remove("final");
     if (G.phase === "play" && roomCode && G.undo) {
-      if (G.undo === me) { t = "已请求悔棋，等对方回应"; acts.append(mkBtn("撤回请求", () => apply({ undo: 0 }))); }
-      else if (me) { t = "对方请求悔棋"; s = "同意后退回到对方上一手之前"; acts.append(mkBtn("同意", () => answerUndo(true), "primary"), mkBtn("拒绝", () => answerUndo(false))); }
-      else t = `${C(G.undo)}方请求悔棋`;
+      if (G.undo === me) { t = "已请求悔棋，等其他人回应"; acts.append(mkBtn("撤回请求", () => apply({ undo: 0 }))); }
+      else if (me && !isOut(me)) {
+        t = np === 2 ? "对方请求悔棋" : `${C(G.undo)}方请求悔棋`;
+        s = `同意后退回到${np === 2 ? "对方" : C(G.undo) + "方"}上一手之前`;
+        acts.append(mkBtn("同意", () => answerUndo(true), "primary"), mkBtn("拒绝", () => answerUndo(false)));
+      } else t = `${C(G.undo)}方请求悔棋`;
     } else if (G.phase === "score" && sc) {
-      const d = sc.b - sc.w;
-      t = `黑 ${sc.bArea} : 白 ${sc.wArea} + 贴 ${fmt(sc.komi)}` + (d ? ` · ${d > 0 ? "黑" : "白"}领先 ${fmt(Math.abs(d))}` : " · 持平");
+      if (np === 2) {
+        const d = sc.totals[1] - sc.totals[2];
+        t = `黑 ${sc.areas[1]} : 白 ${sc.areas[2]} + 贴 ${fmt(sc.komi)}` + (d ? ` · ${d > 0 ? "黑" : "白"}领先 ${fmt(Math.abs(d))}` : " · 持平");
+      } else {
+        t = activeColors().map((c) => `${C(c)} ${sc.areas[c]}`).join(" · ") + (sc.leader ? ` · ${C(sc.leader)}领先` : " · 并列");
+      }
       s = "点击死子整块标记，再点一次取消。确认后结束对局。";
-      if (roomCode) s += ` 黑${G.ok.b ? "已确认" : "未确认"} · 白${G.ok.w ? "已确认" : "未确认"}`;
+      if (roomCode) s += " " + activeColors().map((c) => `${C(c)}${G.ok[K(c)] ? "已确认" : "未确认"}`).join(" · ");
     } else if (G.phase === "end" && G.result) {
+      const r = G.result;
       box.classList.add("final");
-      t = resultText(G.result);
-      s = G.result.kind === "score" ? `数子：黑 ${fmt(G.result.b)} · 白 ${fmt(G.result.w)}（含贴 ${fmt(G.cfg.komi)}）` : `${C(3 - G.result.winner)}方认输`;
+      if (r.kind === "resign") {
+        t = `${C(r.winner)}${np === 2 ? "中盘胜" : "胜"}`;
+        s = np === 2 ? `${C(3 - r.winner)}方认输` : "其他玩家都已认输";
+      } else if (np === 2) {
+        t = r.winner ? `${C(r.winner)}胜 ${fmt(r.margin)} 目` : "和棋";
+        s = `数子：黑 ${fmt(r.areas.b)} · 白 ${fmt(r.areas.w)}（含贴 ${fmt(G.cfg.komi)}）`;
+      } else {
+        t = r.winner ? `${C(r.winner)}胜` : "平局";
+        const order = range(np).sort((a, b) => (isOut(a) - isOut(b)) || (r.areas[K(b)] - r.areas[K(a)]));
+        s = "数子：" + order.map((c) => `${C(c)} ${fmt(r.areas[K(c)])}${isOut(c) ? "（认输）" : ""}`).join(" · ");
+      }
     }
     $("bannerTxt").textContent = t;
     $("bannerSub").textContent = s;
@@ -1062,7 +1159,8 @@ input[type="range"]:disabled{opacity:.5}
     if (!st) return;
     me = seatOf(G);
     pushPresence();
-    const online = !!roomCode, both = bothSeated(), phase = G.phase;
+    const online = !!roomCode, np = NP(), full = allSeated(), phase = G.phase;
+    if (myColor > np) myColor = 1;
 
     // room card
     $("tabLocal").setAttribute("aria-pressed", String(tab === "local"));
@@ -1073,44 +1171,51 @@ input[type="range"]:disabled{opacity:.5}
     $("createBtn").disabled = !canNet;
     $("joinBtn").disabled = !canNet;
     $("codeIn").disabled = !db;
-    $("createBtn").textContent = busy ? "连接中…" : "创建房间";
+    $("createBtn").textContent = busy ? "连接中…" : np === 2 ? "创建房间" : `创建${np === 3 ? "三" : "四"}色房间`;
     $("idleHint").textContent = !dbReady ? "正在连接联机服务…" : db ? "创建后把邀请链接发给朋友，点开就能加入；也可以输入房间号。" : "联机服务还没配置好，现在只能本机对弈。";
     document.querySelectorAll("#colorSeg button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.c === myColor)));
     if (online) {
       $("codeTxt").textContent = roomCode;
       let info;
       if (me === 0) info = "你在观战";
-      else if (!both) info = `你执${C(me)} · 等待对手加入`;
-      else info = `你执${C(me)} · ` + (presenceOn ? (seatOnline(3 - me) ? "对手在线" : "对手不在线") : "已连接");
+      else if (!full) info = `你执${C(me)} · 等待玩家加入（${seatedCount()}/${np}）`;
+      else if (!presenceOn) info = `你执${C(me)} · 已连接`;
+      else if (np === 2) info = `你执${C(me)} · ` + (seatOnline(3 - me) ? "对手在线" : "对手不在线");
+      else {
+        const others = range(np).filter((c) => c !== me);
+        info = `你执${C(me)} · 其他玩家在线 ${others.filter(seatOnline).length}/${others.length}`;
+      }
+      if (isOut(me)) info += " · 你已认输";
       $("roomInfo").textContent = info;
       $("takeover").hidden = me !== 0;
     }
 
     // players
-    for (const c of [1, 2]) {
-      const k = c === 1 ? "B" : "W";
-      $("p" + k).classList.toggle("on", phase === "play" && st.turn === c && (!online || both));
-      const who = $("who" + k);
+    for (const c of range(np)) {
+      const row = $("p" + c);
+      if (!row) continue;
+      row.classList.toggle("on", phase === "play" && st.turn === c && (!online || full) && !isOut(c));
+      row.classList.toggle("out", isOut(c));
+      const who = $("who" + c);
       who.replaceChildren();
+      const bits = [];
       if (online) {
-        const seated = c === 1 ? G.seats.b : G.seats.w;
-        if (me === c) who.textContent = "你";
-        else {
-          const t = document.createElement("span");
-          t.textContent = !seated ? "空位" : me ? "对手" : "";
-          who.append(t);
-          if (seated && presenceOn) {
-            const on = seatOnline(c), dot = document.createElement("span");
-            dot.className = "dot" + (on ? " on" : "");
-            dot.title = on ? "在线" : "不在线";
-            who.append(dot);
-          }
-        }
+        const seated = G.seats[K(c)];
+        if (me === c) bits.push("你");
+        else if (!seated) bits.push("空位");
+        else if (np === 2 && me) bits.push("对手");
       }
-      if (sc) { $("capL" + k).textContent = "子"; $("cap" + k).textContent = c === 1 ? sc.bArea : sc.wArea; }
-      else { $("capL" + k).textContent = "提"; $("cap" + k).textContent = st.caps[c]; }
+      if (isOut(c)) bits.push("已认输");
+      if (bits.length) { const tSpan = el("span"); tSpan.textContent = bits.join(" · "); who.append(tSpan); }
+      if (online && me !== c && G.seats[K(c)] && presenceOn) {
+        const on = seatOnline(c), dot = el("span", "dot" + (on ? " on" : ""));
+        dot.title = on ? "在线" : "不在线";
+        who.append(dot);
+      }
+      if (sc) { $("capL" + c).textContent = "子"; $("cap" + c).textContent = sc.areas[c]; }
+      else { $("capL" + c).textContent = "提"; $("cap" + c).textContent = st.caps[c]; }
     }
-    if (!flashTimer) { const el = $("status"); el.textContent = statusText(); el.classList.remove("warn"); }
+    if (!flashTimer) { const e = $("status"); e.textContent = statusText(); e.classList.remove("warn"); }
     renderBanner();
 
     // actions
@@ -1118,24 +1223,33 @@ input[type="range"]:disabled{opacity:.5}
     $("actScore").hidden = phase !== "score";
     $("actEnd").hidden = phase !== "end";
     const seated = !online || me !== 0;
-    $("undoBtn").disabled = online ? (!seated || !G.moves.some((m) => m[1] === me) || (G.undo && G.undo !== me)) : !G.moves.length;
+    const activeMe = !online || (me !== 0 && !isOut(me));
+    $("undoBtn").disabled = online ? (!activeMe || !G.moves.some((m) => m[1] === me) || (G.undo && G.undo !== me)) : !G.moves.length;
     $("undoBtn").textContent = online && G.undo === me ? "撤回悔棋" : "悔棋";
     $("passBtn").disabled = !canPlay();
-    $("resignBtn").disabled = !seated || (online && !both);
+    $("resignBtn").disabled = !activeMe || (online && !full);
     $("resetBtn").disabled = !seated || !G.moves.length;
-    const myOk = online && me ? G.ok[me === 1 ? "b" : "w"] : false;
-    $("confirmBtn").disabled = !seated || myOk;
-    $("confirmBtn").textContent = myOk ? "等对方确认" : "确认结果";
-    $("resumeBtn").disabled = !seated;
+    const myOk = online && me ? G.ok[K(me)] : false;
+    $("confirmBtn").disabled = !activeMe || myOk;
+    $("confirmBtn").textContent = myOk ? "等其他人确认" : "确认结果";
+    $("resumeBtn").disabled = !activeMe;
     $("againBtn").disabled = !seated;
     $("swapBtn").hidden = !online;
     $("swapBtn").disabled = !seated;
+    $("swapBtn").textContent = np === 2 ? "交换黑白再来" : "轮换颜色再来";
     $("endUndoBtn").hidden = online;
 
     // board settings
     const locked = shapeLocked(), cfg = G.cfg;
+    document.querySelectorAll("#playersSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.p === np)); b.disabled = locked; });
     document.querySelectorAll("#sizeSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.n === cfg.N)); b.disabled = locked; });
     document.querySelectorAll("#komiSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.k === cfg.komi)); b.disabled = locked; });
+    $("komiField").hidden = np !== 2;
+    const mh = $("multiHint");
+    mh.hidden = np === 2;
+    mh.textContent = np === 3
+      ? "三色：黑 → 白 → 红 轮流落子。三人连续停一手进入数子，按数子多少排名，不贴目。"
+      : "四色：黑 → 白 → 红 → 蓝 轮流落子。四人连续停一手进入数子，按数子多少排名，不贴目。";
     const rough = $("rough");
     if (document.activeElement !== rough) rough.value = cfg.rough;
     rough.disabled = locked;
@@ -1150,7 +1264,7 @@ input[type="range"]:disabled{opacity:.5}
     lh.hidden = !locked;
     lh.textContent = me === 0 ? "观战时不能修改棋盘" : "对局进行中，棋盘已锁定，终局后可以改";
 
-    cv.style.cursor = canPlay() || (phase === "score" && seated) ? "pointer" : "default";
+    cv.style.cursor = canPlay() || (phase === "score" && activeMe) ? "pointer" : "default";
   }
 
   /* ---------- events ---------- */
@@ -1179,10 +1293,11 @@ input[type="range"]:disabled{opacity:.5}
   $("resignBtn").addEventListener("click", (e) => armed2(e.currentTarget, "认输", "确定认输？", resign));
   $("resetBtn").addEventListener("click", (e) => armed2(e.currentTarget, "重新开局", "确定重开？", () => rematch(false)));
   $("confirmBtn").addEventListener("click", confirmScore);
-  $("resumeBtn").addEventListener("click", () => apply({ phase: "play", dead: [], ok: { b: false, w: false } }));
+  $("resumeBtn").addEventListener("click", () => apply({ phase: "play", dead: [], ok: allFalse() }));
   $("againBtn").addEventListener("click", () => rematch(false));
   $("swapBtn").addEventListener("click", () => rematch(true));
 
+  document.querySelectorAll("#playersSeg button").forEach((b) => b.addEventListener("click", () => { if (+b.dataset.p !== NP()) setCfg({ players: +b.dataset.p }); }));
   document.querySelectorAll("#sizeSeg button").forEach((b) => b.addEventListener("click", () => { if (+b.dataset.n !== G.cfg.N) setCfg({ N: +b.dataset.n }); }));
   document.querySelectorAll("#komiSeg button").forEach((b) => b.addEventListener("click", () => { if (!shapeLocked()) apply({ cfg: { komi: +b.dataset.k } }); }));
   $("rough").addEventListener("input", (e) => setCfg({ rough: +e.target.value }));
@@ -1192,7 +1307,6 @@ input[type="range"]:disabled{opacity:.5}
 
   $("tabLocal").addEventListener("click", () => { tab = "local"; roomErr(""); if (roomCode) leaveRoom(); else render(); });
   $("tabOnline").addEventListener("click", () => { tab = "online"; render(); });
-  document.querySelectorAll("#colorSeg button").forEach((b) => b.addEventListener("click", () => { myColor = +b.dataset.c; render(); }));
   $("createBtn").addEventListener("click", createRoom);
   $("joinForm").addEventListener("submit", (e) => { e.preventDefault(); joinRoom($("codeIn").value); });
   $("leaveBtn").addEventListener("click", () => { tab = "online"; roomErr(""); leaveRoom(); });
@@ -1210,7 +1324,6 @@ input[type="range"]:disabled{opacity:.5}
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
     else fallback();
   });
-  document.querySelectorAll("#takeover button").forEach((b) => b.addEventListener("click", () => takeSeat(+b.dataset.seat)));
   window.addEventListener("hashchange", () => {
     const h = location.hash.replace("#", "").toUpperCase();
     if (db && /^[A-Z0-9]{4}$/.test(h) && h !== roomCode) { tab = "online"; joinRoom(h); }
