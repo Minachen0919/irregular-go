@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "games": {
+      "$code": {
+        ".read": true,
+        ".write": true,
+        ".validate": "$code.matches(/^[A-Z0-9]+$/) && $code.length == 4 && newData.hasChild('cfg')",
+        "moves": { ".validate": "newData.isString() && newData.val().length < 6000" },
+        "dead": { ".validate": "newData.isString() && newData.val().length < 6000" }
+      }
+    },
+    "presence": {
+      "$code": {
+        ".read": true,
+        "$cid": { ".write": true, ".validate": "newData.hasChild('seat')" }
+      }
+    }
+  }
+}

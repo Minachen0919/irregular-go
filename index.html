@@ -1,0 +1,1241 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>异形棋盘</title>
+<meta name="description" content="四周随机生成的异形围棋盘，发个链接就能和朋友联机下棋。">
+<meta property="og:title" content="异形棋盘">
+<meta property="og:description" content="四周随机生成的异形围棋盘，发个链接就能和朋友联机下棋。">
+<meta name="theme-color" content="#E0E4DF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171C19" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23E0B26C'/%3E%3Ccircle cx='16' cy='16' r='10' fill='%23181817'/%3E%3Ccircle cx='12.5' cy='12.5' r='3' fill='%23555551'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=ZCOOL+XiaoWei&display=swap">
+<style>
+/* Layout: an irregular kaya slab owns the left (sticky); a quiet instrument column scrolls on the right, stacked under the board on phones */
+:root{
+  --bg:#E0E4DF; --surface:#ECEFEA; --ink:#1D2320; --muted:#646D67; --rule:#C6CCC6;
+  --accent:#B4432E; --on-accent:#FBF2EC; --ok:#2F7D52;
+  --btn:#F6F7F4; --primary:#1D2320; --primary-ink:#F1F3EF;
+  --display:"ZCOOL XiaoWei","Songti SC","STSong","Noto Serif SC",serif;
+  --body:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#171C19; --surface:#1F2622; --ink:#E4E8E3; --muted:#8E9790; --rule:#313934;
+    --accent:#DD6750; --on-accent:#1B0F0B; --ok:#5EC28B;
+    --btn:#252C28; --primary:#E4E8E3; --primary-ink:#171C19; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html{background:var(--bg)}
+body{
+  margin:0; background:var(--bg); color:var(--ink); font-family:var(--body); font-size:14px; line-height:1.55;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-top:max(20px, env(safe-area-inset-top, 0px));
+  padding-bottom:max(20px, env(safe-area-inset-bottom, 0px));
+}
+.app{max-width:1240px; margin:0 auto; display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:36px; align-items:start}
+.stage{min-width:0; display:flex; justify-content:center; position:sticky; top:20px}
+.board-wrap{width:min(100%, calc(100vh - 40px)); aspect-ratio:1/1; max-width:100%}
+@supports (height:100dvh){ .board-wrap{width:min(100%, calc(100dvh - 40px))} }
+canvas{display:block; touch-action:manipulation; -webkit-tap-highlight-color:transparent}
+
+.panel{display:flex; flex-direction:column; gap:20px; min-width:0}
+.brand{display:flex; gap:14px; align-items:center}
+.seal{
+  flex:none; width:46px; height:46px; border-radius:7px; background:var(--accent); color:var(--on-accent);
+  display:grid; place-items:center; font-family:var(--display); font-size:27px; line-height:1; transform:rotate(-4deg);
+}
+h1{margin:0; font-family:var(--display); font-weight:400; font-size:31px; letter-spacing:.06em; line-height:1.15; text-wrap:balance}
+.sub{margin:2px 0 0; color:var(--muted); font-size:12.5px}
+
+.room{display:grid; gap:12px}
+.room-body{display:grid; gap:10px}
+.join{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; margin:0}
+.join input{
+  font-family:var(--mono); font-size:15px; letter-spacing:.24em; text-transform:uppercase;
+  padding:8px 12px; border-radius:8px; border:1px solid var(--rule); background:var(--btn); color:var(--ink); min-width:0;
+}
+.join input::placeholder{letter-spacing:.04em; text-transform:none; color:var(--muted); font-family:var(--body); font-size:13px}
+.code-row{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px 10px 14px; border:1px solid var(--rule); border-radius:10px; background:var(--surface)}
+.eyebrow{display:block; font-size:11px; letter-spacing:.2em; color:var(--muted)}
+.code{font-family:var(--mono); font-size:26px; font-weight:500; letter-spacing:.2em; line-height:1.2; user-select:all}
+.hint{margin:0; font-size:12.5px; color:var(--muted)}
+.hint.warn{color:var(--accent)}
+.takeover{display:flex; flex-wrap:wrap; align-items:center; gap:8px}
+.linkbtn{background:none; border:0; padding:0; font:inherit; font-size:12.5px; color:var(--muted); text-decoration:underline; text-underline-offset:3px; cursor:pointer; justify-self:start}
+
+.players{display:grid; gap:6px}
+.player{
+  display:grid; grid-template-columns:22px minmax(0,1fr) auto; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:10px; border:1px solid transparent; transition:background-color .2s, border-color .2s;
+}
+.player.on{background:var(--surface); border-color:var(--rule)}
+.chip{width:20px; height:20px; border-radius:50%}
+.chip.b{background:radial-gradient(circle at 35% 30%, #6c6c69, #1c1c1b 55%, #060606)}
+.chip.w{background:radial-gradient(circle at 35% 30%, #fff, #ece8df 55%, #b9b3a5); box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
+.pname{font-weight:600; display:flex; align-items:center; gap:8px; min-width:0}
+.who{font-size:12px; font-weight:400; color:var(--muted); display:inline-flex; align-items:center; gap:5px}
+.dot{width:7px; height:7px; border-radius:50%; border:1.5px solid var(--muted)}
+.dot.on{background:var(--ok); border-color:var(--ok)}
+.pill{font-size:11px; font-weight:500; color:var(--accent); border:1px solid currentColor; border-radius:999px; padding:0 8px; line-height:18px; visibility:hidden; white-space:nowrap}
+.player.on .pill{visibility:visible}
+.cap{font-family:var(--mono); font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
+.cap b{color:var(--ink); font-weight:500; font-size:15px; margin-left:4px}
+.status{font-size:13px; color:var(--muted); min-height:1.55em; padding:2px 2px 0}
+.status.warn{color:var(--accent)}
+
+.banner{display:grid; gap:6px; padding:12px 14px; border-radius:10px; background:var(--surface); border:1px solid var(--rule)}
+.banner p{margin:0}
+.banner .bt{font-size:14px; font-weight:600}
+.banner .bs{font-size:12.5px; color:var(--muted)}
+.banner.final .bt{font-family:var(--display); font-weight:400; font-size:28px; letter-spacing:.05em; line-height:1.2}
+.banner-acts{display:flex; gap:8px; margin-top:4px}
+.banner-acts:empty{display:none}
+.banner-acts .btn{flex:1 1 0}
+
+.actions > div{display:flex; gap:8px}
+.actions .btn{flex:1 1 0; min-width:0}
+.btn{
+  font:inherit; font-size:13px; padding:9px 6px; border-radius:8px; border:1px solid var(--rule);
+  background:var(--btn); color:var(--ink); cursor:pointer; transition:border-color .15s, color .15s; white-space:nowrap;
+}
+.btn:hover:not(:disabled){border-color:var(--muted)}
+.btn:disabled{opacity:.45; cursor:default}
+.btn.armed, .btn.armed:hover:not(:disabled){border-color:var(--accent); color:var(--accent)}
+button:focus-visible, input:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.primary{background:var(--primary); color:var(--primary-ink); border-color:var(--primary); padding:10px; font-size:14px}
+.primary:hover:not(:disabled){border-color:var(--primary); opacity:.92}
+.code-row .btn{padding:8px 12px}
+
+.shape{border-top:1px solid var(--rule); padding-top:18px; display:grid; gap:14px}
+.shape h2{margin:0; font-size:11.5px; font-weight:500; letter-spacing:.24em; color:var(--muted)}
+.field{display:grid; gap:8px}
+.row{display:flex; justify-content:space-between; align-items:center; gap:12px}
+.label{font-size:13px}
+.val{font-family:var(--mono); font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums}
+.seg{display:grid; grid-template-columns:repeat(3,1fr); gap:3px; padding:3px; border:1px solid var(--rule); border-radius:9px; background:var(--surface)}
+.seg.two{grid-template-columns:repeat(2,1fr)}
+.seg.four{grid-template-columns:repeat(4,1fr)}
+.seg.mini{width:120px}
+.seg button{font-family:var(--mono); font-size:13px; border:0; background:transparent; color:var(--muted); padding:6px 0; border-radius:6px; cursor:pointer}
+.seg.text button{font-family:var(--body)}
+.seg button[aria-pressed="true"]{background:var(--btn); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.seg button:disabled{cursor:default; opacity:.5}
+input[type="range"]{width:100%; margin:0; accent-color:var(--accent)}
+input[type="range"]:disabled{opacity:.5}
+.scale{display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-top:-4px}
+.switch{
+  appearance:none; -webkit-appearance:none; flex:none; width:36px; height:20px; margin:0; border-radius:999px;
+  background:var(--rule); position:relative; cursor:pointer; transition:background-color .2s;
+}
+.switch::after{
+  content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+  background:var(--btn); box-shadow:0 1px 2px rgba(0,0,0,.28); transition:transform .2s;
+}
+.switch:checked{background:var(--ink)}
+.switch:checked::after{transform:translateX(16px)}
+.switch:disabled{opacity:.5; cursor:default}
+.meta{margin:-4px 0 0; font-size:12px; color:var(--muted)}
+.meta .mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+@media (max-width:860px){
+  body{padding-top:max(16px, env(safe-area-inset-top, 0px))}
+  .app{display:flex; flex-direction:column; gap:18px; align-items:stretch}
+  .panel{display:contents}
+  .brand{order:-1}
+  .stage{order:0; position:static}
+  .room,.players,.banner,.actions,.shape{order:1}
+  .board-wrap{width:100%}
+  h1{font-size:27px}
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important} }
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="stage">
+    <div class="board-wrap" id="wrap"><canvas id="board" role="img" aria-label="异形围棋棋盘"></canvas></div>
+  </main>
+
+  <aside class="panel">
+    <header class="brand">
+      <div class="seal" aria-hidden="true">異</div>
+      <div>
+        <h1>异形棋盘</h1>
+        <p class="sub">四周随机侵蚀的围棋盘 · 可联机</p>
+      </div>
+    </header>
+
+    <section class="room">
+      <div class="seg two text" role="group" aria-label="对局方式">
+        <button type="button" id="tabLocal" aria-pressed="true">本机对弈</button>
+        <button type="button" id="tabOnline" aria-pressed="false">联机对弈</button>
+      </div>
+      <div class="room-body" id="roomIdle" hidden>
+        <div class="row">
+          <span class="label">我执</span>
+          <div class="seg two mini text" id="colorSeg" role="group" aria-label="我执">
+            <button type="button" data-c="1" aria-pressed="true">黑</button>
+            <button type="button" data-c="2" aria-pressed="false">白</button>
+          </div>
+        </div>
+        <button class="btn primary" id="createBtn" type="button">创建房间</button>
+        <form class="join" id="joinForm">
+          <input id="codeIn" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="输入房间号" aria-label="房间号">
+          <button class="btn" id="joinBtn" type="submit">加入</button>
+        </form>
+        <p class="hint" id="idleHint">正在连接联机服务…</p>
+      </div>
+      <div class="room-body" id="roomOn" hidden>
+        <div class="code-row">
+          <div><span class="eyebrow">房间号</span><span class="code" id="codeTxt"></span></div>
+          <button class="btn" id="copyBtn" type="button">复制邀请链接</button>
+        </div>
+        <p class="hint" id="roomInfo"></p>
+        <div class="takeover" id="takeover" hidden>
+          <span class="hint">换了浏览器？回到自己的座位：</span>
+          <button class="btn" type="button" data-seat="1">我是黑方</button>
+          <button class="btn" type="button" data-seat="2">我是白方</button>
+        </div>
+        <button class="linkbtn" id="leaveBtn" type="button">离开房间</button>
+      </div>
+      <p class="hint warn" id="roomErr" hidden></p>
+    </section>
+
+    <section class="players" aria-live="polite">
+      <div class="player" id="pB">
+        <span class="chip b"></span>
+        <span class="pname">黑 <span class="who" id="whoB"></span><span class="pill">落子中</span></span>
+        <span class="cap"><span id="capLB">提</span><b id="capB">0</b></span>
+      </div>
+      <div class="player" id="pW">
+        <span class="chip w"></span>
+        <span class="pname">白 <span class="who" id="whoW"></span><span class="pill">落子中</span></span>
+        <span class="cap"><span id="capLW">提</span><b id="capW">0</b></span>
+      </div>
+      <div class="status" id="status"></div>
+    </section>
+
+    <section class="banner" id="banner" hidden>
+      <p class="bt" id="bannerTxt"></p>
+      <p class="bs" id="bannerSub"></p>
+      <div class="banner-acts" id="bannerActs"></div>
+    </section>
+
+    <section class="actions">
+      <div id="actPlay">
+        <button class="btn" id="undoBtn" type="button">悔棋</button>
+        <button class="btn" id="passBtn" type="button">停一手</button>
+        <button class="btn" id="resignBtn" type="button">认输</button>
+        <button class="btn" id="resetBtn" type="button">重新开局</button>
+      </div>
+      <div id="actScore" hidden>
+        <button class="btn primary" id="confirmBtn" type="button">确认结果</button>
+        <button class="btn" id="resumeBtn" type="button">继续下棋</button>
+      </div>
+      <div id="actEnd" hidden>
+        <button class="btn primary" id="againBtn" type="button">再来一盘</button>
+        <button class="btn" id="swapBtn" type="button">交换黑白再来</button>
+        <button class="btn" id="endUndoBtn" type="button">悔棋</button>
+      </div>
+    </section>
+
+    <section class="shape">
+      <h2>棋盘设置</h2>
+      <div class="field">
+        <span class="label">路数</span>
+        <div class="seg" id="sizeSeg" role="group" aria-label="路数">
+          <button type="button" data-n="9" aria-pressed="false">9</button>
+          <button type="button" data-n="13" aria-pressed="false">13</button>
+          <button type="button" data-n="19" aria-pressed="true">19</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="row"><label class="label" for="rough">边缘侵蚀</label><span class="val" id="roughVal">55</span></div>
+        <input type="range" id="rough" min="0" max="100" value="55">
+        <div class="scale"><span>方正</span><span>破碎</span></div>
+      </div>
+      <div class="row"><label class="label" for="holes">内部空洞</label><input type="checkbox" class="switch" id="holes" role="switch"></div>
+      <div class="field">
+        <span class="label">贴目（中国规则数子）</span>
+        <div class="seg four" id="komiSeg" role="group" aria-label="贴目">
+          <button type="button" data-k="0" aria-pressed="false">0</button>
+          <button type="button" data-k="5.5" aria-pressed="false">5.5</button>
+          <button type="button" data-k="6.5" aria-pressed="false">6.5</button>
+          <button type="button" data-k="7.5" aria-pressed="true">7.5</button>
+        </div>
+      </div>
+      <div class="row"><label class="label" for="coords">坐标</label><input type="checkbox" class="switch" id="coords" role="switch" checked></div>
+      <button class="btn primary" id="regen" type="button">换一个形状</button>
+      <p class="meta"><span class="mono">No.<span id="seedTxt"></span></span> · <span id="ptsTxt"></span></p>
+      <p class="hint" id="lockHint" hidden></p>
+    </section>
+  </aside>
+</div>
+
+<script src="config.js"></script>
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const LET = "ABCDEFGHJKLMNOPQRST";
+  const CODE_CH = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const KOMIS = [0, 5.5, 6.5, 7.5];
+  const FB_VER = "10.12.2";
+  const ls = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
+  };
+  const cid = (() => {
+    let c = ls.get("igo.cid");
+    if (!c || !/^[a-z0-9]+$/.test(c)) { c = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); ls.set("igo.cid", c); }
+    return c;
+  })();
+  const rand5 = () => 10000 + Math.floor(Math.random() * 89999);
+  const fmt = (x) => String(Math.round(x * 10) / 10);
+  const C = (c) => (c === 1 ? "黑" : "白");
+
+  /* ---------- game record ---------- */
+  function freshGame(cfg) {
+    return { v: 1, cfg: { ...cfg }, moves: [], seats: { b: "", w: "" }, phase: "play", dead: [], ok: { b: false, w: false }, undo: 0, result: null };
+  }
+  function merge(a, b) {
+    const out = a && typeof a === "object" && !Array.isArray(a) ? { ...a } : {};
+    for (const k of Object.keys(b || {})) {
+      const v = b[k];
+      if (v && typeof v === "object" && !Array.isArray(v)) out[k] = merge(out[k], v);
+      else out[k] = Array.isArray(v) ? v.slice() : v;
+    }
+    return out;
+  }
+  function sanitize(d) {
+    d = d && typeof d === "object" ? d : {};
+    const g = freshGame({ N: 19, seed: 10000, rough: 55, holes: false, komi: 7.5 });
+    const c = d.cfg && typeof d.cfg === "object" ? d.cfg : {};
+    g.cfg.N = [9, 13, 19].includes(c.N) ? c.N : 19;
+    g.cfg.seed = Number.isFinite(c.seed) ? Math.floor(c.seed) : 10000;
+    g.cfg.rough = Number.isFinite(c.rough) ? Math.max(0, Math.min(100, Math.round(c.rough))) : 55;
+    g.cfg.holes = !!c.holes;
+    g.cfg.komi = KOMIS.includes(c.komi) ? c.komi : 7.5;
+    const max = g.cfg.N * g.cfg.N;
+    g.moves = Array.isArray(d.moves) ? d.moves.filter((m) => Array.isArray(m) && Number.isInteger(m[0]) && m[0] >= -1 && m[0] < max && (m[1] === 1 || m[1] === 2)).map((m) => [m[0], m[1]]) : [];
+    const s = d.seats && typeof d.seats === "object" ? d.seats : {};
+    g.seats = { b: typeof s.b === "string" ? s.b.slice(0, 40) : "", w: typeof s.w === "string" ? s.w.slice(0, 40) : "" };
+    g.phase = ["play", "score", "end"].includes(d.phase) ? d.phase : "play";
+    g.dead = Array.isArray(d.dead) ? d.dead.filter((x) => Number.isInteger(x) && x >= 0 && x < max) : [];
+    const ok = d.ok && typeof d.ok === "object" ? d.ok : {};
+    g.ok = { b: ok.b === true, w: ok.w === true };
+    g.undo = d.undo === 1 || d.undo === 2 ? d.undo : 0;
+    const r = d.result;
+    if (r && typeof r === "object" && (r.kind === "resign" || r.kind === "score")) {
+      g.result = { kind: r.kind, winner: [0, 1, 2].includes(r.winner) ? r.winner : 0 };
+      if (r.kind === "score") { g.result.b = +r.b || 0; g.result.w = +r.w || 0; g.result.margin = +r.margin || 0; }
+    }
+    if (g.phase === "end" && !g.result) g.phase = "play";
+    return g;
+  }
+  function loadLocal() { try { const t = ls.get("igo.local"); return t ? sanitize(JSON.parse(t)) : null; } catch (e) { return null; } }
+  function saveLocal() { if (!roomCode) ls.set("igo.local", JSON.stringify(G)); }
+
+  let roomCode = "", ref = null, unsub = null, pending = null, inflight = false, busy = false;
+  let F = null, db = null, dbReady = false;
+  let presRef = null, presUnsubs = [], presenceOn = false, peersMap = {}, lastPresence = "";
+  let tab = "local", myColor = 1, me = 0;
+  let G = loadLocal() || freshGame({ N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5 });
+  let showCoords = ls.get("igo.coords") !== "0";
+  let SH = { key: "" }, st = null, sc = null;
+  let hover = -1, flashTimer = 0, geom = null, staticCv = null, woodCache = { key: "", cv: null };
+
+  /* ---------- seeded randomness ---------- */
+  function rng(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function noise(rand, cells) {
+    const L = cells + 2, g = new Float32Array(L * L);
+    for (let i = 0; i < g.length; i++) g[i] = rand();
+    const sm = (t) => t * t * (3 - 2 * t);
+    return (x, y) => {
+      const xi = Math.min(Math.floor(x), cells), yi = Math.min(Math.floor(y), cells);
+      const xf = sm(x - xi), yf = sm(y - yi);
+      const a = g[yi * L + xi], b = g[yi * L + xi + 1], c = g[(yi + 1) * L + xi], d = g[(yi + 1) * L + xi + 1];
+      return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf;
+    };
+  }
+
+  /* ---------- board shape ---------- */
+  function nb4(p, N) {
+    const x = p % N, y = (p / N) | 0, r = [];
+    if (x > 0) r.push(p - 1);
+    if (x < N - 1) r.push(p + 1);
+    if (y > 0) r.push(p - N);
+    if (y < N - 1) r.push(p + N);
+    return r;
+  }
+  function keepLargest(a, N) {
+    const comp = new Int32Array(N * N).fill(-1);
+    let best = -1, bestSize = 0, id = 0;
+    for (let i = 0; i < N * N; i++) {
+      if (!a[i] || comp[i] >= 0) continue;
+      let size = 0; const s = [i]; comp[i] = id;
+      while (s.length) {
+        const p = s.pop(); size++;
+        for (const q of nb4(p, N)) if (a[q] && comp[q] < 0) { comp[q] = id; s.push(q); }
+      }
+      if (size > bestSize) { bestSize = size; best = id; }
+      id++;
+    }
+    for (let i = 0; i < N * N; i++) a[i] = comp[i] === best ? 1 : 0;
+  }
+  function prune(a, N) {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < N * N; i++) {
+        if (!a[i]) continue;
+        let d = 0; for (const q of nb4(i, N)) d += a[q];
+        if (d <= 1) { a[i] = 0; changed = true; }
+      }
+    }
+  }
+  function generate(N, seed, rough, holes) {
+    let out = null;
+    for (let k = 0; k < 16; k++) {
+      const rand = rng(seed * 2654435761 + k * 97 + N * 13);
+      const A = 3 + Math.floor(rand() * 2), B = 7;
+      const n1 = noise(rand, A), n2 = noise(rand, B), n3 = noise(rand, 5);
+      const D = rough * (N - 1) * 0.36;
+      const a = new Uint8Array(N * N);
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const u = x / (N - 1), v = y / (N - 1);
+        let n = 0.68 * n1(u * A, v * A) + 0.32 * n2(u * B, v * B);
+        n = Math.max(0, Math.min(1, (n - 0.22) / 0.56));
+        const d = Math.min(x, y, N - 1 - x, N - 1 - y);
+        a[y * N + x] = d + 0.5 > Math.pow(n, 1.4) * D ? 1 : 0;
+      }
+      if (holes) {
+        const h = new Uint8Array(N * N);
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+          const d = Math.min(x, y, N - 1 - x, N - 1 - y);
+          if (d >= 3 && n3((x / (N - 1)) * 5, (y / (N - 1)) * 5) > 0.8) h[y * N + x] = 1;
+        }
+        for (let i = 0; i < N * N; i++) if (h[i]) { a[i] = 0; for (const q of nb4(i, N)) a[q] = 0; }
+      }
+      keepLargest(a, N);
+      prune(a, N);
+      let c = 0; for (let i = 0; i < a.length; i++) c += a[i];
+      out = { a, c };
+      if (c >= N * N * 0.42 && c >= 30) break;
+    }
+    return out;
+  }
+  function ensureShape(cfg) {
+    const key = [cfg.N, cfg.seed, cfg.rough, cfg.holes ? 1 : 0].join("|");
+    if (SH.key === key) return false;
+    const r = generate(cfg.N, cfg.seed, cfg.rough / 100, !!cfg.holes);
+    const adj = [];
+    for (let i = 0; i < r.a.length; i++) adj.push(r.a[i] ? nb4(i, cfg.N).filter((q) => r.a[q]) : []);
+    SH = { key, N: cfg.N, seed: cfg.seed, act: r.a, adj, cnt: r.c };
+    return true;
+  }
+
+  /* ---------- rules ---------- */
+  function group(b, i) {
+    const color = b[i], seen = new Set([i]), libs = new Set(), s = [i];
+    while (s.length) {
+      const p = s.pop();
+      for (const q of SH.adj[p]) {
+        if (b[q] === 0) libs.add(q);
+        else if (b[q] === color && !seen.has(q)) { seen.add(q); s.push(q); }
+      }
+    }
+    return { stones: [...seen], libs: libs.size };
+  }
+  function tryPlace(board, i, c, ko) {
+    if (!SH.act[i] || board[i]) return { ok: false, why: "taken" };
+    if (i === ko) return { ok: false, why: "ko" };
+    const b = board.slice(), opp = 3 - c;
+    let taken = 0, takenIdx = -1;
+    b[i] = c;
+    for (const n of SH.adj[i]) {
+      if (b[n] !== opp) continue;
+      const g = group(b, n);
+      if (g.libs === 0) { for (const s of g.stones) b[s] = 0; taken += g.stones.length; takenIdx = g.stones[0]; }
+    }
+    const mine = group(b, i);
+    if (mine.libs === 0) return { ok: false, why: "suicide" };
+    return { ok: true, board: b, taken, ko: taken === 1 && mine.stones.length === 1 && mine.libs === 1 ? takenIdx : -1 };
+  }
+  function replay(moves) {
+    const board = new Int8Array(SH.N * SH.N), caps = { 1: 0, 2: 0 };
+    let ko = -1, last = -1, turn = 1;
+    for (const [p, c] of moves) {
+      if (p < 0) { ko = -1; last = -1; turn = 3 - c; continue; }
+      const r = tryPlace(board, p, c, ko);
+      if (!r.ok) continue;
+      board.set(r.board); caps[c] += r.taken; ko = r.ko; last = p; turn = 3 - c;
+    }
+    return { board, caps, ko, last, turn };
+  }
+  function score(board, deadArr, komi) {
+    const N = SH.N, b = board.slice();
+    for (const d of deadArr) b[d] = 0;
+    const terr = new Int8Array(N * N), seen = new Uint8Array(N * N);
+    let bA = 0, wA = 0;
+    for (let i = 0; i < b.length; i++) { if (!SH.act[i]) continue; if (b[i] === 1) bA++; else if (b[i] === 2) wA++; }
+    for (let i = 0; i < b.length; i++) {
+      if (!SH.act[i] || b[i] || seen[i]) continue;
+      const region = [], s = [i]; seen[i] = 1; let border = 0;
+      while (s.length) {
+        const p = s.pop(); region.push(p);
+        for (const q of SH.adj[p]) {
+          if (b[q] === 0) { if (!seen[q]) { seen[q] = 1; s.push(q); } }
+          else border |= b[q];
+        }
+      }
+      if (border === 1 || border === 2) {
+        for (const p of region) terr[p] = border;
+        if (border === 1) bA += region.length; else wA += region.length;
+      }
+    }
+    return { bArea: bA, wArea: wA, komi, b: bA, w: wA + komi, terr };
+  }
+
+  /* ---------- rendering ---------- */
+  const cv = $("board"), ctx = cv.getContext("2d"), wrap = $("wrap");
+  const P = (i) => [geom.pad + (i % SH.N) * geom.step, geom.pad + Math.floor(i / SH.N) * geom.step];
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function layout() {
+    const s = Math.floor(wrap.clientWidth);
+    if (!s || !SH.act) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cv.width = Math.round(s * dpr); cv.height = Math.round(s * dpr);
+    cv.style.width = s + "px"; cv.style.height = s + "px";
+    const padSteps = showCoords ? 1.55 : 1.0;
+    const step = s / (SH.N - 1 + 2 * padSteps);
+    geom = { s, dpr, step, pad: padSteps * step };
+    buildStatic();
+    draw();
+  }
+
+  function woodTexture(W, H, dpr, seed) {
+    const key = W + "x" + H + ":" + seed;
+    if (woodCache.key === key) return woodCache.cv;
+    const rand = rng(seed + 777);
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const g = c.getContext("2d");
+    const base = g.createLinearGradient(0, 0, W, H);
+    base.addColorStop(0, "#ECC482"); base.addColorStop(0.55, "#E0B26C"); base.addColorStop(1, "#E8BC76");
+    g.fillStyle = base; g.fillRect(0, 0, W, H);
+    const GA = (5 + rand() * 9) * dpr, Gf = (0.0016 + rand() * 0.0014) / dpr, Gph = rand() * 6.283;
+    const line = (lw, color) => {
+      const x0 = -W * 0.05 + rand() * W * 1.1;
+      const a2 = (0.5 + rand() * 2.2) * dpr, f2 = (0.008 + rand() * 0.018) / dpr, p2 = rand() * 6.283;
+      g.strokeStyle = color; g.lineWidth = lw; g.beginPath();
+      let first = true;
+      for (let y = -20 * dpr; y <= H + 20 * dpr; y += 5 * dpr) {
+        const x = x0 + GA * Math.sin(y * Gf + Gph + x0 * 0.0022 / dpr) + a2 * Math.sin(y * f2 + p2);
+        if (first) { g.moveTo(x, y); first = false; } else g.lineTo(x, y);
+      }
+      g.stroke();
+    };
+    for (let i = 0; i < 10; i++) {
+      line((14 + rand() * 46) * dpr, rand() < 0.6 ? `rgba(170,104,42,${0.035 + rand() * 0.05})` : `rgba(255,234,184,${0.05 + rand() * 0.06})`);
+    }
+    const n = Math.floor(W / (2.4 * dpr));
+    for (let i = 0; i < n; i++) {
+      const dark = rand() < 0.64;
+      line((0.4 + rand() * 1.3) * dpr, dark ? `rgba(126,72,24,${0.05 + rand() * 0.12})` : `rgba(255,242,208,${0.05 + rand() * 0.10})`);
+    }
+    woodCache = { key, cv: c };
+    return c;
+  }
+
+  function regionCanvas(color) {
+    const { dpr, step } = geom;
+    const c = document.createElement("canvas"); c.width = cv.width; c.height = cv.height;
+    const g = c.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = color; g.strokeStyle = color; g.lineJoin = "round"; g.lineWidth = step * 0.5;
+    const h = step * 0.5;
+    g.beginPath();
+    for (let i = 0; i < SH.act.length; i++) if (SH.act[i]) { const [x, y] = P(i); g.rect(x - h, y - h, 2 * h, 2 * h); }
+    g.fill(); g.stroke();
+    return c;
+  }
+
+  function buildStatic() {
+    const { dpr, step, pad } = geom, N = SH.N, act = SH.act, W = cv.width, H = cv.height;
+    const stc = document.createElement("canvas"); stc.width = W; stc.height = H;
+    const g = stc.getContext("2d");
+
+    const side = regionCanvas("#7A5126");
+    const thick = Math.max(3, step * 0.15) * dpr;
+    g.save();
+    g.shadowColor = "rgba(22,14,6,0.40)"; g.shadowBlur = step * 0.65 * dpr; g.shadowOffsetY = step * 0.3 * dpr;
+    g.drawImage(side, 0, thick);
+    g.restore();
+
+    const mask = regionCanvas("#000");
+    const face = document.createElement("canvas"); face.width = W; face.height = H;
+    const fg = face.getContext("2d");
+    fg.drawImage(woodTexture(W, H, dpr, SH.seed), 0, 0);
+    fg.globalCompositeOperation = "destination-in";
+    fg.drawImage(mask, 0, 0);
+    g.drawImage(face, 0, 0);
+
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const A = (x, y) => x >= 0 && y >= 0 && x < N && y < N && act[y * N + x] === 1;
+    const thin = [], bold = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (!A(x, y)) continue;
+      if (A(x + 1, y)) {
+        const inner = A(x, y - 1) && A(x + 1, y - 1) && A(x, y + 1) && A(x + 1, y + 1);
+        (inner ? thin : bold).push([x, y, x + 1, y]);
+      }
+      if (A(x, y + 1)) {
+        const inner = A(x - 1, y) && A(x - 1, y + 1) && A(x + 1, y) && A(x + 1, y + 1);
+        (inner ? thin : bold).push([x, y, x, y + 1]);
+      }
+    }
+    const lw = Math.max(1, step * 0.032);
+    g.strokeStyle = "rgba(36,20,6,0.82)"; g.lineCap = "square";
+    const stroke = (list, w) => {
+      g.lineWidth = w; g.beginPath();
+      for (const [a, b, c, d] of list) { g.moveTo(pad + a * step, pad + b * step); g.lineTo(pad + c * step, pad + d * step); }
+      g.stroke();
+    };
+    stroke(thin, lw);
+    stroke(bold, lw * 2.1);
+
+    const hs = { 9: [2, 4, 6], 13: [3, 6, 9], 19: [3, 9, 15] }[N], mid = (N - 1) / 2;
+    g.fillStyle = "rgba(36,20,6,0.92)";
+    for (const a of hs) for (const b of hs) {
+      if (N !== 19 && (a === mid) !== (b === mid)) continue;
+      if (!A(a, b)) continue;
+      g.beginPath(); g.arc(pad + a * step, pad + b * step, Math.max(2, step * 0.1), 0, 7); g.fill();
+    }
+
+    if (showCoords) {
+      g.fillStyle = css("--muted");
+      g.font = `500 ${Math.max(9, Math.round(step * 0.34))}px ${css("--mono")}`;
+      g.textAlign = "center"; g.textBaseline = "middle";
+      const off = step * 1.15, end = pad + (N - 1) * step;
+      for (let i = 0; i < N; i++) {
+        const t = pad + i * step;
+        g.fillText(LET[i], t, pad - off);
+        g.fillText(LET[i], t, end + off + step * 0.1);
+        g.fillText(String(N - i), pad - off, t);
+        g.fillText(String(N - i), end + off, t);
+      }
+    }
+    staticCv = stc;
+  }
+
+  function stone(g, x, y, r, c, alpha) {
+    g.save();
+    g.globalAlpha = alpha;
+    if (alpha === 1) {
+      g.shadowColor = "rgba(30,18,6,0.45)"; g.shadowBlur = r * 0.35;
+      g.shadowOffsetX = r * 0.1; g.shadowOffsetY = r * 0.17;
+    }
+    const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r * 1.05);
+    if (c === 1) { gr.addColorStop(0, "#6e6e6a"); gr.addColorStop(0.35, "#2a2a28"); gr.addColorStop(1, "#0a0a09"); }
+    else { gr.addColorStop(0, "#ffffff"); gr.addColorStop(0.55, "#eeebe3"); gr.addColorStop(1, "#bbb5a7"); }
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+
+  function draw() {
+    if (!geom || !staticCv || !st) return;
+    const { dpr, step } = geom;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(staticCv, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const r = step * 0.475;
+    const dead = sc ? new Set(G.dead) : null;
+    for (let i = 0; i < st.board.length; i++) {
+      if (!st.board[i]) continue;
+      const [x, y] = P(i);
+      stone(ctx, x, y, r, st.board[i], dead && dead.has(i) ? 0.36 : 1);
+    }
+    if (sc) {
+      const q = r * 0.5;
+      for (let i = 0; i < sc.terr.length; i++) {
+        const o = sc.terr[i];
+        if (!o || (st.board[i] && !dead.has(i))) continue;
+        const [x, y] = P(i);
+        ctx.fillStyle = o === 1 ? "#141413" : "#F7F5EF";
+        ctx.fillRect(x - q / 2, y - q / 2, q, q);
+        if (o === 2) { ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.lineWidth = 1; ctx.strokeRect(x - q / 2, y - q / 2, q, q); }
+      }
+    }
+    if (G.phase === "play" && st.last >= 0 && st.board[st.last]) {
+      const [x, y] = P(st.last);
+      ctx.strokeStyle = "#D4472E"; ctx.lineWidth = Math.max(1.5, step * 0.075);
+      ctx.beginPath(); ctx.arc(x, y, r * 0.4, 0, 7); ctx.stroke();
+    }
+    if (hover >= 0 && !st.board[hover] && canPlay()) { const [x, y] = P(hover); stone(ctx, x, y, r, st.turn, 0.42); }
+  }
+
+  /* ---------- network: Firebase Realtime Database ---------- */
+  async function initNet() {
+    const cfg = window.FIREBASE_CONFIG;
+    if (!cfg || !cfg.apiKey || !cfg.databaseURL || /PASTE|YOUR/i.test(cfg.apiKey)) return null;
+    try {
+      const [appM, dbM] = await Promise.all([
+        import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-app.js`),
+        import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-database.js`),
+      ]);
+      const app = appM.initializeApp(cfg);
+      return { d: dbM.getDatabase(app), ref: dbM.ref, get: dbM.get, set: dbM.set, update: dbM.update, onValue: dbM.onValue, onDisconnect: dbM.onDisconnect, remove: dbM.remove };
+    } catch (e) {
+      console.warn("Firebase failed to load", e);
+      return null;
+    }
+  }
+  // moves and dead stones travel as compact strings: Realtime Database mangles empty and nested arrays
+  const encMoves = (ms) => ms.map(([p, c]) => (p + 1) * 2 + (c - 1)).join(",");
+  const decMoves = (s) => String(s).split(",").filter((x) => x !== "").map(Number).filter((n) => Number.isInteger(n) && n >= 0).map((n) => [Math.floor(n / 2) - 1, (n % 2) + 1]);
+  function toWire(o) {
+    const w = { ...o };
+    if (Array.isArray(w.moves)) w.moves = encMoves(w.moves);
+    if (Array.isArray(w.dead)) w.dead = w.dead.join(",");
+    return w;
+  }
+  function fromWire(v) {
+    if (!v || typeof v !== "object") return v;
+    const o = { ...v };
+    o.moves = typeof v.moves === "string" ? decMoves(v.moves) : [];
+    o.dead = typeof v.dead === "string" ? v.dead.split(",").filter((x) => x !== "").map(Number) : [];
+    return o;
+  }
+  function flatten(o, pre = "", out = {}) {
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length) flatten(v, pre + k + "/", out);
+      else out[pre + k] = v === undefined ? null : v;
+    }
+    return out;
+  }
+  const mapErr = (e) => ({ code: /permission/i.test(String((e && (e.code || e.message)) || "")) ? "permission" : "other" });
+  function makeDb(F) {
+    const wrapSnap = (s) => ({ exists: s.exists(), data: () => fromWire(s.val()) });
+    return {
+      doc(path) {
+        const r = F.ref(F.d, path);
+        return {
+          get: () => F.get(r).then(wrapSnap, (e) => { throw mapErr(e); }),
+          set: (data) => F.set(r, toWire(data)).catch((e) => { throw mapErr(e); }),
+          update: (patch) => F.update(r, flatten(toWire(patch))).catch((e) => { throw mapErr(e); }),
+          onSnapshot: (next, err) => F.onValue(r, (s) => next(wrapSnap(s)), (e) => { if (err) err(mapErr(e)); }),
+        };
+      },
+    };
+  }
+
+  /* ---------- state flow ---------- */
+  const seatOf = (g) => (!roomCode ? 0 : g.seats.b === cid ? 1 : g.seats.w === cid ? 2 : 0);
+  const bothSeated = () => !!(G.seats.b && G.seats.w);
+  function canPlay() {
+    if (G.phase !== "play") return false;
+    if (!roomCode) return true;
+    return bothSeated() && me === st.turn;
+  }
+  const shapeLocked = () => !!roomCode && (me === 0 || (G.moves.length > 0 && G.phase !== "end"));
+
+  function derive() {
+    const changed = ensureShape(G.cfg);
+    me = seatOf(G);
+    st = replay(G.moves);
+    sc = G.phase === "score" || (G.phase === "end" && G.result && G.result.kind === "score") ? score(st.board, G.dead, G.cfg.komi) : null;
+    if (changed || !geom) layout(); else draw();
+    render();
+  }
+
+  function apply(patch) {
+    G = merge(G, patch);
+    if (roomCode) { pending = pending ? merge(pending, patch) : merge({}, patch); flush(); }
+    else saveLocal();
+    derive();
+  }
+
+  async function flush() {
+    if (inflight || !pending || !ref) return;
+    const p = pending, r = ref;
+    pending = null; inflight = true;
+    p.at = Date.now();
+    try { await r.update(p); }
+    catch (e) {
+      roomErr(errText(e, "同步失败，已恢复到房间里的最新状态"));
+      r.get().then((s) => { if (r === ref) onSnap(s); }).catch(() => {});
+    }
+    inflight = false;
+    if (pending) flush();
+  }
+  function errText(e, fallback) {
+    const c = e && e.code;
+    if (c === "permission") return "数据库拒绝了这次操作，检查 Firebase 规则有没有发布";
+    if (c === "busy") return "暂时没分到空房间号，请再试一次";
+    return fallback;
+  }
+
+  function onSnap(snap) {
+    if (!roomCode) return;
+    if (!snap.exists) { roomErr("这个房间已经不存在了"); leaveRoom(); return; }
+    let d = merge({}, snap.data());
+    if (pending) d = merge(d, pending);
+    G = sanitize(d);
+    derive();
+  }
+
+  /* ---------- online rooms ---------- */
+  function roomErr(msg) { const el = $("roomErr"); el.textContent = msg || ""; el.hidden = !msg; }
+  function setHash(code) {
+    try { history.replaceState(null, "", code ? "#" + code : location.pathname + location.search); } catch (e) {}
+  }
+  function enterRoom(code, r, g) {
+    leaveRoom(true);
+    roomCode = code; ref = r; G = g; tab = "online";
+    ls.set("igo.room", code);
+    setHash(code);
+    unsub = r.onSnapshot(onSnap, () => { if (roomCode === code) roomErr("和房间的连接断了，刷新页面试试"); });
+    joinPresence(code);
+    derive();
+  }
+  function leaveRoom(silent) {
+    if (unsub) { unsub(); unsub = null; }
+    leavePresence();
+    const cfg = G.cfg, was = roomCode;
+    roomCode = ""; ref = null; pending = null;
+    ls.set("igo.room", null);
+    if (!silent && was) { setHash(""); G = loadLocal() || freshGame(cfg); derive(); }
+  }
+  async function createRoom() {
+    if (!db || busy) return;
+    busy = true; roomErr(""); render();
+    try {
+      let code = null, r = null;
+      for (let k = 0; k < 6 && !code; k++) {
+        const c = Array.from({ length: 4 }, () => CODE_CH[Math.floor(Math.random() * CODE_CH.length)]).join("");
+        r = db.doc("games/" + c);
+        const s = await r.get();
+        const d = s.exists ? s.data() : null;
+        if (!d || !d.at || Date.now() - d.at > 3 * 864e5) code = c;
+      }
+      if (!code) throw { code: "busy" };
+      const g = freshGame(G.cfg);
+      g.seats = myColor === 1 ? { b: cid, w: "" } : { b: "", w: cid };
+      g.at = Date.now();
+      await r.set(g);
+      busy = false;
+      enterRoom(code, r, sanitize(g));
+    } catch (e) {
+      busy = false;
+      roomErr(errText(e, "创建房间失败，检查网络后再试一次"));
+      render();
+    }
+  }
+  async function joinRoom(raw) {
+    const code = String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (code.length !== 4) { roomErr("房间号是 4 位字母或数字"); return; }
+    if (!db || busy) return;
+    busy = true; roomErr(""); render();
+    try {
+      const r = db.doc("games/" + code);
+      const s = await r.get();
+      if (!s.exists) throw { code: "nf" };
+      let g = sanitize(merge({}, s.data()));
+      if (g.seats.b !== cid && g.seats.w !== cid) {
+        const seat = !g.seats.b ? "b" : !g.seats.w ? "w" : "";
+        if (seat) {
+          await r.update({ seats: { [seat]: cid }, at: Date.now() });
+          g = merge(g, { seats: { [seat]: cid } });
+        }
+      }
+      busy = false;
+      enterRoom(code, r, g);
+    } catch (e) {
+      busy = false;
+      if (e && e.code === "nf") {
+        roomErr(`没有找到房间 ${code}`);
+        if (ls.get("igo.room") === code) ls.set("igo.room", null);
+        if (location.hash.replace("#", "").toUpperCase() === code) setHash("");
+      } else roomErr(errText(e, "加入失败，检查网络后再试一次"));
+      render();
+    }
+  }
+  function joinPresence(code) {
+    if (!F || presRef) return;
+    const myRef = F.ref(F.d, `presence/${code}/${cid}`);
+    presRef = myRef;
+    presUnsubs.push(F.onValue(F.ref(F.d, ".info/connected"), (s) => {
+      if (s.val() !== true || presRef !== myRef) return;
+      F.onDisconnect(myRef).remove().catch(() => {});
+      lastPresence = "";
+      pushPresence();
+    }));
+    presUnsubs.push(F.onValue(F.ref(F.d, `presence/${code}`), (s) => {
+      peersMap = s.val() || {}; presenceOn = true; render();
+    }, () => { presenceOn = false; render(); }));
+  }
+  function pushPresence() {
+    if (!presRef) return;
+    const s = String(me);
+    if (s === lastPresence) return;
+    lastPresence = s;
+    F.set(presRef, { seat: me, t: Date.now() }).catch(() => {});
+  }
+  function leavePresence() {
+    presUnsubs.forEach((u) => u());
+    presUnsubs = [];
+    if (presRef) {
+      const r = presRef;
+      F.onDisconnect(r).cancel().catch(() => {});
+      F.remove(r).catch(() => {});
+    }
+    presRef = null; presenceOn = false; peersMap = {}; lastPresence = "";
+  }
+  const seatOnline = (c) => Object.keys(peersMap).some((k) => k !== cid && peersMap[k] && peersMap[k].seat === c);
+  const inviteLink = () => location.origin + location.pathname + "#" + roomCode;
+
+  /* ---------- actions ---------- */
+  function flash(msg) {
+    const el = $("status");
+    el.textContent = msg; el.classList.add("warn");
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { flashTimer = 0; render(); }, 2200);
+  }
+  function clickPoint(i) {
+    if (G.phase === "score") return toggleDead(i);
+    if (G.phase !== "play") return;
+    if (roomCode) {
+      if (me === 0) return flash("你在观战，不能落子");
+      if (!bothSeated()) return flash("等对手加入后才能开始");
+      if (me !== st.turn) return flash("还没轮到你");
+    }
+    if (st.board[i]) return;
+    const r = tryPlace(st.board, i, st.turn, st.ko);
+    if (!r.ok) return flash(r.why === "ko" ? "打劫：不能立刻提回，先在别处下一手" : "禁着点：这里落子没有气");
+    hover = -1;
+    apply({ moves: [...G.moves, [i, st.turn]], undo: 0 });
+  }
+  function toggleDead(i) {
+    if (roomCode && me === 0) return;
+    if (!st.board[i]) return;
+    const chain = group(st.board, i).stones, set = new Set(G.dead), isDead = set.has(i);
+    for (const s of chain) { if (isDead) set.delete(s); else set.add(s); }
+    apply({ dead: [...set], ok: { b: false, w: false } });
+  }
+  function pass() {
+    if (!canPlay()) return;
+    const lm = G.moves[G.moves.length - 1], moves = [...G.moves, [-1, st.turn]];
+    hover = -1;
+    if (lm && lm[0] === -1) apply({ moves, phase: "score", dead: [], ok: { b: false, w: false }, undo: 0 });
+    else apply({ moves, undo: 0 });
+  }
+  function undo() {
+    if (!roomCode) {
+      if (G.phase === "end" && G.result && G.result.kind === "resign") return apply({ phase: "play", result: null });
+      if (!G.moves.length) return;
+      return apply({ moves: G.moves.slice(0, -1), phase: "play", dead: [], ok: { b: false, w: false }, result: null });
+    }
+    if (me === 0 || G.phase !== "play") return;
+    if (G.undo === me) return apply({ undo: 0 });
+    if (!G.moves.some((m) => m[1] === me)) return flash("你还没下过子");
+    apply({ undo: me });
+  }
+  function answerUndo(yes) {
+    const req = G.undo;
+    if (!req || req === me || me === 0) return;
+    if (!yes) return apply({ undo: 0 });
+    let idx = -1;
+    for (let k = G.moves.length - 1; k >= 0; k--) if (G.moves[k][1] === req) { idx = k; break; }
+    apply({ moves: idx >= 0 ? G.moves.slice(0, idx) : G.moves, undo: 0 });
+  }
+  function resign() {
+    const loser = roomCode ? me : st.turn;
+    if (!loser) return;
+    apply({ phase: "end", result: { kind: "resign", winner: 3 - loser }, undo: 0 });
+  }
+  function confirmScore() {
+    if (!sc) return;
+    const res = { kind: "score", b: sc.b, w: sc.w, winner: sc.b > sc.w ? 1 : sc.w > sc.b ? 2 : 0, margin: Math.abs(sc.b - sc.w) };
+    if (!roomCode) return apply({ phase: "end", result: res });
+    if (me === 0) return;
+    const key = me === 1 ? "b" : "w", other = me === 1 ? "w" : "b";
+    if (G.ok[other]) apply({ ok: { [key]: true }, phase: "end", result: res });
+    else apply({ ok: { [key]: true } });
+  }
+  function rematch(swap) {
+    const patch = { moves: [], phase: "play", dead: [], ok: { b: false, w: false }, undo: 0, result: null };
+    if (swap && roomCode) patch.seats = { b: G.seats.w || "", w: G.seats.b || "" };
+    hover = -1;
+    apply(patch);
+  }
+  function setCfg(part) {
+    if (shapeLocked()) return;
+    hover = -1;
+    apply({ cfg: part, moves: [], phase: "play", dead: [], ok: { b: false, w: false }, undo: 0, result: null });
+  }
+  function takeSeat(c) {
+    if (!roomCode) return;
+    const key = c === 1 ? "b" : "w", other = c === 1 ? "w" : "b";
+    const patch = { seats: { [key]: cid } };
+    if (G.seats[other] === cid) patch.seats[other] = "";
+    apply(patch);
+  }
+
+  // two-step confirm for irreversible buttons
+  const armed = new Map();
+  function armed2(btn, label, armedLabel, fn) {
+    if (armed.get(btn)) {
+      clearTimeout(armed.get(btn)); armed.delete(btn);
+      btn.classList.remove("armed"); btn.textContent = label;
+      fn();
+      return;
+    }
+    btn.classList.add("armed"); btn.textContent = armedLabel;
+    armed.set(btn, setTimeout(() => { armed.delete(btn); btn.classList.remove("armed"); btn.textContent = label; }, 3000));
+  }
+
+  /* ---------- panel ---------- */
+  function statusText() {
+    const n = G.moves.length + 1, online = !!roomCode;
+    if (G.phase === "score") return "数子阶段";
+    if (G.phase === "end") return "对局结束";
+    if (online && !bothSeated()) return "等待对手加入，把邀请链接发给朋友";
+    const lm = G.moves[G.moves.length - 1];
+    const note = lm && lm[0] === -1 ? `${C(lm[1])}方停一手 · ` : "";
+    if (online && me) return note + (me === st.turn ? `轮到你 · 第 ${n} 手` : `等对手落子 · 第 ${n} 手`);
+    return note + `${online ? "观战 · " : ""}${C(st.turn)}方落子 · 第 ${n} 手`;
+  }
+  function resultText(r) {
+    if (r.kind === "resign") return `${C(r.winner)}中盘胜`;
+    if (!r.winner) return "和棋";
+    return `${C(r.winner)}胜 ${fmt(r.margin)} 目`;
+  }
+  function mkBtn(label, fn, cls) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn" + (cls ? " " + cls : ""); b.textContent = label;
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function renderBanner() {
+    const box = $("banner"), acts = $("bannerActs");
+    let t = "", s = "";
+    acts.replaceChildren();
+    box.classList.remove("final");
+    if (G.phase === "play" && roomCode && G.undo) {
+      if (G.undo === me) { t = "已请求悔棋，等对方回应"; acts.append(mkBtn("撤回请求", () => apply({ undo: 0 }))); }
+      else if (me) { t = "对方请求悔棋"; s = "同意后退回到对方上一手之前"; acts.append(mkBtn("同意", () => answerUndo(true), "primary"), mkBtn("拒绝", () => answerUndo(false))); }
+      else t = `${C(G.undo)}方请求悔棋`;
+    } else if (G.phase === "score" && sc) {
+      const d = sc.b - sc.w;
+      t = `黑 ${sc.bArea} : 白 ${sc.wArea} + 贴 ${fmt(sc.komi)}` + (d ? ` · ${d > 0 ? "黑" : "白"}领先 ${fmt(Math.abs(d))}` : " · 持平");
+      s = "点击死子整块标记，再点一次取消。确认后结束对局。";
+      if (roomCode) s += ` 黑${G.ok.b ? "已确认" : "未确认"} · 白${G.ok.w ? "已确认" : "未确认"}`;
+    } else if (G.phase === "end" && G.result) {
+      box.classList.add("final");
+      t = resultText(G.result);
+      s = G.result.kind === "score" ? `数子：黑 ${fmt(G.result.b)} · 白 ${fmt(G.result.w)}（含贴 ${fmt(G.cfg.komi)}）` : `${C(3 - G.result.winner)}方认输`;
+    }
+    $("bannerTxt").textContent = t;
+    $("bannerSub").textContent = s;
+    $("bannerSub").hidden = !s;
+    box.hidden = !t;
+  }
+  function render() {
+    if (!st) return;
+    me = seatOf(G);
+    pushPresence();
+    const online = !!roomCode, both = bothSeated(), phase = G.phase;
+
+    // room card
+    $("tabLocal").setAttribute("aria-pressed", String(tab === "local"));
+    $("tabOnline").setAttribute("aria-pressed", String(tab === "online"));
+    $("roomIdle").hidden = !(tab === "online" && !online);
+    $("roomOn").hidden = !online;
+    const canNet = !!db && !busy;
+    $("createBtn").disabled = !canNet;
+    $("joinBtn").disabled = !canNet;
+    $("codeIn").disabled = !db;
+    $("createBtn").textContent = busy ? "连接中…" : "创建房间";
+    $("idleHint").textContent = !dbReady ? "正在连接联机服务…" : db ? "创建后把邀请链接发给朋友，点开就能加入；也可以输入房间号。" : "联机服务还没配置好，现在只能本机对弈。";
+    document.querySelectorAll("#colorSeg button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.c === myColor)));
+    if (online) {
+      $("codeTxt").textContent = roomCode;
+      let info;
+      if (me === 0) info = "你在观战";
+      else if (!both) info = `你执${C(me)} · 等待对手加入`;
+      else info = `你执${C(me)} · ` + (presenceOn ? (seatOnline(3 - me) ? "对手在线" : "对手不在线") : "已连接");
+      $("roomInfo").textContent = info;
+      $("takeover").hidden = me !== 0;
+    }
+
+    // players
+    for (const c of [1, 2]) {
+      const k = c === 1 ? "B" : "W";
+      $("p" + k).classList.toggle("on", phase === "play" && st.turn === c && (!online || both));
+      const who = $("who" + k);
+      who.replaceChildren();
+      if (online) {
+        const seated = c === 1 ? G.seats.b : G.seats.w;
+        if (me === c) who.textContent = "你";
+        else {
+          const t = document.createElement("span");
+          t.textContent = !seated ? "空位" : me ? "对手" : "";
+          who.append(t);
+          if (seated && presenceOn) {
+            const on = seatOnline(c), dot = document.createElement("span");
+            dot.className = "dot" + (on ? " on" : "");
+            dot.title = on ? "在线" : "不在线";
+            who.append(dot);
+          }
+        }
+      }
+      if (sc) { $("capL" + k).textContent = "子"; $("cap" + k).textContent = c === 1 ? sc.bArea : sc.wArea; }
+      else { $("capL" + k).textContent = "提"; $("cap" + k).textContent = st.caps[c]; }
+    }
+    if (!flashTimer) { const el = $("status"); el.textContent = statusText(); el.classList.remove("warn"); }
+    renderBanner();
+
+    // actions
+    $("actPlay").hidden = phase !== "play";
+    $("actScore").hidden = phase !== "score";
+    $("actEnd").hidden = phase !== "end";
+    const seated = !online || me !== 0;
+    $("undoBtn").disabled = online ? (!seated || !G.moves.some((m) => m[1] === me) || (G.undo && G.undo !== me)) : !G.moves.length;
+    $("undoBtn").textContent = online && G.undo === me ? "撤回悔棋" : "悔棋";
+    $("passBtn").disabled = !canPlay();
+    $("resignBtn").disabled = !seated || (online && !both);
+    $("resetBtn").disabled = !seated || !G.moves.length;
+    const myOk = online && me ? G.ok[me === 1 ? "b" : "w"] : false;
+    $("confirmBtn").disabled = !seated || myOk;
+    $("confirmBtn").textContent = myOk ? "等对方确认" : "确认结果";
+    $("resumeBtn").disabled = !seated;
+    $("againBtn").disabled = !seated;
+    $("swapBtn").hidden = !online;
+    $("swapBtn").disabled = !seated;
+    $("endUndoBtn").hidden = online;
+
+    // board settings
+    const locked = shapeLocked(), cfg = G.cfg;
+    document.querySelectorAll("#sizeSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.n === cfg.N)); b.disabled = locked; });
+    document.querySelectorAll("#komiSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.k === cfg.komi)); b.disabled = locked; });
+    const rough = $("rough");
+    if (document.activeElement !== rough) rough.value = cfg.rough;
+    rough.disabled = locked;
+    $("roughVal").textContent = cfg.rough;
+    $("holes").checked = !!cfg.holes;
+    $("holes").disabled = locked;
+    $("coords").checked = showCoords;
+    $("regen").disabled = locked;
+    $("seedTxt").textContent = cfg.seed;
+    $("ptsTxt").textContent = `${SH.cnt} 个交叉点 / 满盘 ${cfg.N * cfg.N}`;
+    const lh = $("lockHint");
+    lh.hidden = !locked;
+    lh.textContent = me === 0 ? "观战时不能修改棋盘" : "对局进行中，棋盘已锁定，终局后可以改";
+
+    cv.style.cursor = canPlay() || (phase === "score" && seated) ? "pointer" : "default";
+  }
+
+  /* ---------- events ---------- */
+  function hit(ev) {
+    if (!geom) return -1;
+    const rect = cv.getBoundingClientRect();
+    const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+    const gx = Math.round((x - geom.pad) / geom.step), gy = Math.round((y - geom.pad) / geom.step);
+    if (gx < 0 || gy < 0 || gx >= SH.N || gy >= SH.N) return -1;
+    const i = gy * SH.N + gx;
+    if (!SH.act[i]) return -1;
+    const [px, py] = P(i);
+    return Math.hypot(px - x, py - y) <= geom.step * 0.5 ? i : -1;
+  }
+  cv.addEventListener("pointermove", (e) => {
+    if (e.pointerType !== "mouse") return;
+    const i = hit(e);
+    if (i !== hover) { hover = i; draw(); }
+  });
+  cv.addEventListener("pointerleave", () => { if (hover !== -1) { hover = -1; draw(); } });
+  cv.addEventListener("pointerdown", (e) => { const i = hit(e); if (i >= 0) clickPoint(i); });
+
+  $("undoBtn").addEventListener("click", undo);
+  $("endUndoBtn").addEventListener("click", undo);
+  $("passBtn").addEventListener("click", pass);
+  $("resignBtn").addEventListener("click", (e) => armed2(e.currentTarget, "认输", "确定认输？", resign));
+  $("resetBtn").addEventListener("click", (e) => armed2(e.currentTarget, "重新开局", "确定重开？", () => rematch(false)));
+  $("confirmBtn").addEventListener("click", confirmScore);
+  $("resumeBtn").addEventListener("click", () => apply({ phase: "play", dead: [], ok: { b: false, w: false } }));
+  $("againBtn").addEventListener("click", () => rematch(false));
+  $("swapBtn").addEventListener("click", () => rematch(true));
+
+  document.querySelectorAll("#sizeSeg button").forEach((b) => b.addEventListener("click", () => { if (+b.dataset.n !== G.cfg.N) setCfg({ N: +b.dataset.n }); }));
+  document.querySelectorAll("#komiSeg button").forEach((b) => b.addEventListener("click", () => { if (!shapeLocked()) apply({ cfg: { komi: +b.dataset.k } }); }));
+  $("rough").addEventListener("input", (e) => setCfg({ rough: +e.target.value }));
+  $("holes").addEventListener("change", (e) => setCfg({ holes: e.target.checked }));
+  $("regen").addEventListener("click", () => setCfg({ seed: rand5() }));
+  $("coords").addEventListener("change", (e) => { showCoords = e.target.checked; ls.set("igo.coords", showCoords ? "1" : "0"); layout(); });
+
+  $("tabLocal").addEventListener("click", () => { tab = "local"; roomErr(""); if (roomCode) leaveRoom(); else render(); });
+  $("tabOnline").addEventListener("click", () => { tab = "online"; render(); });
+  document.querySelectorAll("#colorSeg button").forEach((b) => b.addEventListener("click", () => { myColor = +b.dataset.c; render(); }));
+  $("createBtn").addEventListener("click", createRoom);
+  $("joinForm").addEventListener("submit", (e) => { e.preventDefault(); joinRoom($("codeIn").value); });
+  $("leaveBtn").addEventListener("click", () => { tab = "online"; roomErr(""); leaveRoom(); });
+  $("copyBtn").addEventListener("click", () => {
+    const text = inviteLink(), btn = $("copyBtn");
+    const done = () => { btn.textContent = "已复制"; setTimeout(() => { btn.textContent = "复制邀请链接"; }, 1600); };
+    const fallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.append(ta); ta.select();
+      let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+      ta.remove();
+      if (ok) done(); else roomErr("没能自动复制，邀请链接是：" + text);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  });
+  document.querySelectorAll("#takeover button").forEach((b) => b.addEventListener("click", () => takeSeat(+b.dataset.seat)));
+  window.addEventListener("hashchange", () => {
+    const h = location.hash.replace("#", "").toUpperCase();
+    if (db && /^[A-Z0-9]{4}$/.test(h) && h !== roomCode) { tab = "online"; joinRoom(h); }
+  });
+
+  let raf = 0;
+  new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); }).observe(wrap);
+  const refresh = () => { if (geom) { buildStatic(); draw(); } };
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(refresh);
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (mq.addEventListener) mq.addEventListener("change", refresh);
+
+  derive();
+
+  F = await initNet();
+  db = F ? makeDb(F) : null;
+  dbReady = true;
+  {
+    const h = location.hash.replace("#", "");
+    const fromLink = /^[A-Za-z0-9]{4}$/.test(h);
+    const code = fromLink ? h.toUpperCase() : ls.get("igo.room");
+    if (fromLink) tab = "online";
+    if (db && code) { tab = "online"; joinRoom(code); }
+    else render();
+  }
+</script>
+</body>
+</html>
