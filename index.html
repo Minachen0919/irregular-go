@@ -164,7 +164,11 @@ button:focus-visible, input:focus-visible{outline:2px solid var(--accent); outli
 .seg{display:grid; grid-template-columns:repeat(3,1fr); gap:3px; padding:3px; border:1px solid var(--rule); border-radius:9px; background:var(--surface)}
 .seg.two{grid-template-columns:repeat(2,1fr)}
 .seg.four{grid-template-columns:repeat(4,1fr)}
-.seg.mini{grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:44px}
+.seg.seatpick{grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; padding:4px}
+.seg.seatpick button{display:flex; align-items:center; justify-content:center; gap:7px; padding:8px 10px; font-size:13px; color:var(--ink); min-width:0}
+.seg.seatpick button[aria-pressed="false"]{color:var(--muted)}
+.seg.seatpick canvas{width:18px; height:18px; flex:none; display:block}
+.seg.seatpick span{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .seg button{font-family:var(--mono); font-size:13px; border:0; background:transparent; color:var(--muted); padding:6px 0; border-radius:6px; cursor:pointer}
 .seg.text button{font-family:var(--body)}
 .seg button[aria-pressed="true"]{background:var(--btn); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.14)}
@@ -220,9 +224,9 @@ input[type="range"]:disabled{opacity:.5}
         <button type="button" id="tabOnline" aria-pressed="false">联机对弈</button>
       </div>
       <div class="room-body" id="roomIdle" hidden>
-        <div class="row">
+        <div class="field">
           <span class="label">我执</span>
-          <div class="seg mini text" id="colorSeg" role="group" aria-label="我执"></div>
+          <div class="seg text seatpick" id="colorSeg" role="group" aria-label="我执"></div>
         </div>
         <button class="btn primary" id="createBtn" type="button">创建房间</button>
         <form class="join" id="joinForm">
@@ -1269,7 +1273,8 @@ input[type="range"]:disabled{opacity:.5}
     const seg = $("colorSeg");
     seg.replaceChildren();
     for (const c of range(n)) {
-      const b = el("button"); b.type = "button"; b.dataset.c = c; b.textContent = C(c);
+      const b = el("button"); b.type = "button"; b.dataset.c = c;
+      b.append(el("canvas"), el("span"));
       b.addEventListener("click", () => { myColor = c; render(); });
       seg.append(b);
     }
@@ -1445,7 +1450,13 @@ input[type="range"]:disabled{opacity:.5}
     $("codeIn").disabled = !db;
     $("createBtn").textContent = busy ? "连接中…" : np === 2 ? "创建房间" : `创建${np === 3 ? "三" : "四"}色房间`;
     $("idleHint").textContent = !dbReady ? "正在连接联机服务…" : db ? "创建后把邀请链接发给朋友，点开就能加入；也可以输入房间号。" : "联机服务还没配置好，现在只能本机对弈。";
-    document.querySelectorAll("#colorSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.c === myColor)); b.textContent = C(+b.dataset.c); });
+    document.querySelectorAll("#colorSeg button").forEach((b) => {
+      const c = +b.dataset.c, cvs = b.querySelector("canvas");
+      b.setAttribute("aria-pressed", String(c === myColor));
+      b.querySelector("span").textContent = C(c);
+      b.title = `第 ${c} 手 · ${C(c)}`;
+      if (cvs.dataset.style !== ES[c]) { drawChip(cvs, ES[c], 18, 7.2); cvs.dataset.style = ES[c]; }
+    });
     document.querySelectorAll("#takeBtns button").forEach((b) => { b.textContent = `我是 ${C(+b.dataset.c)}`; });
     if (online) {
       $("codeTxt").textContent = roomCode;
