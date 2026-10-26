@@ -137,6 +137,17 @@ canvas.chip{width:22px; height:22px; display:block}
 .status{font-size:13px; color:var(--muted); min-height:1.55em; padding:2px 2px 0}
 .status.warn{color:var(--accent)}
 
+.reviewbar{display:grid; gap:8px; padding:10px 12px; border:1px solid var(--rule); border-radius:10px; background:var(--surface)}
+.rv-row{display:flex; align-items:center; gap:6px}
+.rv-row input[type="range"]{flex:1; min-width:0}
+.rvb{flex:none; width:32px; height:30px; display:grid; place-items:center; padding:0; border:1px solid var(--rule); border-radius:8px; background:var(--btn); color:var(--ink); cursor:pointer}
+.rvb svg{width:14px; height:14px; fill:currentColor; display:block}
+.rvb:hover:not(:disabled){border-color:var(--muted)}
+.rvb:disabled{opacity:.4; cursor:default}
+.rv-meta{justify-content:space-between; flex-wrap:wrap; gap:6px 14px; font-size:12.5px; color:var(--muted)}
+.rv-count{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink); margin-right:auto}
+.rv-nums{display:inline-flex; align-items:center; gap:6px; cursor:pointer}
+.rv-meta .linkbtn{font-size:12.5px}
 .banner{display:grid; gap:6px; padding:12px 14px; border-radius:10px; background:var(--surface); border:1px solid var(--rule)}
 .banner p{margin:0}
 .banner .bt{font-size:14px; font-weight:600}
@@ -281,6 +292,21 @@ input[type="range"]:disabled{opacity:.5}
       <div class="plist" id="plist"></div>
       <div class="status" id="status"></div>
       <p class="hint" id="styleHint" hidden></p>
+      <div class="reviewbar" id="reviewBar" hidden>
+        <div class="rv-row">
+          <button class="rvb" id="rvFirst" type="button" aria-label="回到开局" title="回到开局"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="2" height="10"/><path d="M13 3 6 8l7 5z"/></svg></button>
+          <button class="rvb" id="rvPrev" type="button" aria-label="上一手" title="上一手（←）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 3 4 8l7 5z"/></svg></button>
+          <input type="range" id="rvRange" min="0" max="0" value="0" step="1" aria-label="跳到第几手">
+          <button class="rvb" id="rvNext" type="button" aria-label="下一手" title="下一手（→）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 7 5-7 5z"/></svg></button>
+          <button class="rvb" id="rvLast" type="button" aria-label="最新一手" title="最新一手"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 3 7 5-7 5z"/><rect x="11.5" y="3" width="2" height="10"/></svg></button>
+        </div>
+        <div class="rv-row rv-meta">
+          <span class="rv-count" id="rvCount"></span>
+          <label class="rv-nums" for="numsToggle"><input type="checkbox" class="switch" id="numsToggle" role="switch">手数</label>
+          <button class="linkbtn" id="rvTry" type="button">试下</button>
+          <button class="linkbtn" id="rvShare" type="button">复制复盘链接</button>
+        </div>
+      </div>
     </section>
 
     <section class="banner" id="banner" hidden>
@@ -300,7 +326,12 @@ input[type="range"]:disabled{opacity:.5}
         <button class="btn primary" id="confirmBtn" type="button">确认结果</button>
         <button class="btn" id="resumeBtn" type="button">继续下棋</button>
       </div>
+      <div id="actReview" hidden>
+        <button class="btn" id="tryUndoBtn" type="button">撤销试下</button>
+        <button class="btn primary" id="liveBtn" type="button">回到对局</button>
+      </div>
       <div id="actEnd" hidden>
+        <button class="btn" id="reviewBtn" type="button">从头复盘</button>
         <button class="btn primary" id="againBtn" type="button">再来一盘</button>
         <button class="btn" id="swapBtn" type="button">交换黑白再来</button>
         <button class="btn" id="endUndoBtn" type="button">悔棋</button>
@@ -471,7 +502,7 @@ input[type="range"]:disabled{opacity:.5}
     return g;
   }
   function loadLocal() { try { const t = ls.get("igo.local"); return t ? sanitize(JSON.parse(t)) : null; } catch (e) { return null; } }
-  function saveLocal() { if (!roomCode) ls.set("igo.local", JSON.stringify(G)); }
+  function saveLocal() { if (!roomCode && !sharedView) ls.set("igo.local", JSON.stringify(G)); }
 
   let roomCode = "", ref = null, unsub = null, pending = null, inflight = false, busy = false;
   let F = null, db = null, dbReady = false;
@@ -479,6 +510,9 @@ input[type="range"]:disabled{opacity:.5}
   let tab = "local", myColor = 1, me = 0, builtPlayers = 0, pickerSeat = 0;
   let G = loadLocal() || freshGame({ shape: "flat", N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5, players: 2 });
   let showCoords = ls.get("igo.coords") !== "0";
+  let showNums = ls.get("igo.nums") === "1";
+  // review: null = live game; otherwise { idx: moves shown, try: local variation moves, pinned: stay in review at the live end }
+  let review = null, sharedView = false;
   let SH = { key: "" }, st = null, sc = null;
   let hover = -1, flashTimer = 0, geom = null, staticCv = null, woodCache = { key: "", cv: null };
 
@@ -635,15 +669,17 @@ input[type="range"]:disabled{opacity:.5}
   function replay(moves) {
     const board = new Int8Array(SH.size), caps = [0, 0, 0, 0, 0];
     const seen = new Set([board.join("")]);
-    let last = -1, lastColor = 0;
+    const num = new Int16Array(SH.size);
+    let last = -1, lastColor = 0, k = 0;
     for (const [p, c] of moves) {
+      k++;
       lastColor = c;
       if (p < 0) { last = -1; continue; }
       const r = tryPlace(board, p, c, seen);
       if (!r.ok) continue;
-      board.set(r.board); caps[c] += r.taken; last = p; seen.add(r.key);
+      board.set(r.board); caps[c] += r.taken; last = p; seen.add(r.key); num[p] = k;
     }
-    return { board, caps, last, lastColor, seen };
+    return { board, caps, last, lastColor, seen, num };
   }
   function score(board, deadArr) {
     const b = board.slice(), np = NP();
@@ -813,6 +849,16 @@ input[type="range"]:disabled{opacity:.5}
     staticCv = stc;
   }
 
+  function styleLum(c) {
+    const sty = styleOf(c), hex = (sty.m ? sty.m[1] : sty.c[1]).replace("#", "");
+    const v = [0, 2, 4].map((k) => parseInt(hex.slice(k, k + 2), 16) / 255);
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  }
+  function numColor(c, isLast) {
+    const light = styleLum(c) > 0.5;
+    if (isLast) return light ? "#C0331E" : "#FFD25A";
+    return light ? "#1A1714" : "#FFFFFF";
+  }
   function rnd(seed) {
     let v = seed % 2147483647; if (v <= 0) v += 2147483646;
     return () => (v = (v * 16807) % 2147483647) / 2147483647;
@@ -1037,6 +1083,19 @@ input[type="range"]:disabled{opacity:.5}
     c3.mats.set(k, m);
     return m;
   }
+  function numMat(n, color) {
+    const k = "n:" + n + ":" + color;
+    let m = c3.mats.get(k);
+    if (m) return m;
+    const cvs = document.createElement("canvas"); cvs.width = cvs.height = 64;
+    const g = cvs.getContext("2d");
+    g.fillStyle = color; g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = `700 ${n > 99 ? 26 : 32}px ${css("--mono")}`;
+    g.fillText(String(n), 32, 34);
+    m = new c3.T.SpriteMaterial({ map: new c3.T.CanvasTexture(cvs), transparent: true, depthWrite: false });
+    c3.mats.set(k, m);
+    return m;
+  }
   function basic3(color) {
     const k = "b:" + color;
     let m = c3.mats.get(k);
@@ -1066,15 +1125,24 @@ input[type="range"]:disabled{opacity:.5}
         grp.add(q);
       }
     }
-    if (G.phase === "play" && st.last >= 0 && st.board[st.last]) {
+    if (showNums) {
+      for (let i = 0; i < st.board.length; i++) {
+        if (!st.board[i] || !st.num[i] || (dead && dead.has(i))) continue;
+        const sp2 = new T.Sprite(numMat(st.num[i], numColor(st.board[i], i === st.last)));
+        sp2.scale.set(r * 1.25, r * 1.25, 1);
+        sp2.position.copy(c3.P[i]).addScaledVector(c3.Nv[i], r * flatOf(i) * 1.75 + 0.06);
+        grp.add(sp2);
+      }
+    }
+    if (!showNums && (G.phase === "play" || review) && st.last >= 0 && st.board[st.last]) {
       const i = st.last, k = new T.Mesh(c3.markGeo, basic3(styleOf(st.board[i]).ring));
       k.position.copy(c3.P[i]).addScaledVector(c3.Nv[i], r * flatOf(i) * 1.75 + 0.01);
       grp.add(k);
     }
-    if (hover >= 0 && !st.board[hover] && canPlay()) put(hover, st.turn, 2);
+    if (hover >= 0 && !st.board[hover] && ghostOk()) put(hover, st.turn, 2);
     // an opponent's move on the far side turns the cube toward it
     const n = G.moves.length;
-    if (roomCode && c3.lastSeen >= 0 && n > c3.lastSeen && st.last >= 0 && st.board[st.last] !== me) showPoint(st.last, true);
+    if (roomCode && !review && c3.lastSeen >= 0 && n > c3.lastSeen && st.last >= 0 && st.board[st.last] !== me) showPoint(st.last, true);
     c3.lastSeen = n;
     c3.dirty = true;
   }
@@ -1155,13 +1223,23 @@ input[type="range"]:disabled{opacity:.5}
         if (ms.light) { ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.lineWidth = 1; ctx.strokeRect(x - q / 2, y - q / 2, q, q); }
       }
     }
-    if (G.phase === "play" && st.last >= 0 && st.board[st.last]) {
+    if (showNums) {
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = `600 ${Math.max(8, Math.round(step * 0.4))}px ${css("--mono")}`;
+      for (let i = 0; i < st.board.length; i++) {
+        if (!st.board[i] || !st.num[i] || (dead && dead.has(i))) continue;
+        const [x, y] = P(i);
+        ctx.fillStyle = numColor(st.board[i], i === st.last);
+        ctx.fillText(String(st.num[i]), x, y + step * 0.02);
+      }
+    }
+    if (!showNums && (G.phase === "play" || review) && st.last >= 0 && st.board[st.last]) {
       const [x, y] = P(st.last);
       ctx.strokeStyle = styleOf(st.board[st.last]).ring;
       ctx.lineWidth = Math.max(1.5, step * 0.075);
       ctx.beginPath(); ctx.arc(x, y, r * 0.4, 0, 7); ctx.stroke();
     }
-    if (hover >= 0 && !st.board[hover] && canPlay()) { const [x, y] = P(hover); stone(ctx, x, y, r, st.turn, 0.42, hover); }
+    if (hover >= 0 && !st.board[hover] && ghostOk()) { const [x, y] = P(hover); stone(ctx, x, y, r, st.turn, 0.42, hover); }
   }
 
   /* ---------- network: Firebase Realtime Database ---------- */
@@ -1233,12 +1311,14 @@ input[type="range"]:disabled{opacity:.5}
     for (let k = 1; k <= n; k++) { const x = ((c - 1 + k) % n) + 1; if (!isOut(x)) return x; }
     return c;
   }
+  const ghostOk = () => (review ? true : canPlay());
   function canPlay() {
+    if (review || sharedView) return false;
     if (G.phase !== "play") return false;
     if (!roomCode) return true;
     return allSeated() && me === st.turn && !isOut(me);
   }
-  const shapeLocked = () => !!roomCode && (me === 0 || (G.moves.length > 0 && G.phase !== "end"));
+  const shapeLocked = () => sharedView || (!!roomCode && (me === 0 || (G.moves.length > 0 && G.phase !== "end")));
 
   function effStyles() {
     const used = new Set(), out = {};
@@ -1274,9 +1354,14 @@ input[type="range"]:disabled{opacity:.5}
     const changed = ensureShape(G.cfg);
     ES = effStyles();
     me = seatOf(G);
-    st = replay(G.moves);
+    const total = G.moves.length;
+    if (review) {
+      if (review.idx > total) { review.idx = total; review.try = []; }
+      if (review.idx >= total && !review.try.length && !review.pinned) review = null;
+    }
+    st = replay(review ? G.moves.slice(0, review.idx).concat(review.try) : G.moves);
     st.turn = nextActive(st.lastColor || NP());
-    sc = G.phase === "score" || (G.phase === "end" && G.result && G.result.kind === "score") ? score(st.board, G.dead) : null;
+    sc = !review && (G.phase === "score" || (G.phase === "end" && G.result && G.result.kind === "score")) ? score(st.board, G.dead) : null;
     if (builtPlayers !== NP()) buildPlayers();
     if (changed || !geom) layout(); else draw();
     render();
@@ -1326,7 +1411,7 @@ input[type="range"]:disabled{opacity:.5}
   }
   function enterRoom(code, r, g) {
     leaveRoom(true);
-    roomCode = code; ref = r; G = g; tab = "online";
+    roomCode = code; ref = r; G = g; tab = "online"; review = null;
     ls.set("igo.room", code);
     setHash(code);
     unsub = r.onSnapshot(onSnap, () => { if (roomCode === code) roomErr("和房间的连接断了，刷新页面试试"); });
@@ -1339,7 +1424,7 @@ input[type="range"]:disabled{opacity:.5}
     const cfg = G.cfg, was = roomCode;
     roomCode = ""; ref = null; pending = null;
     ls.set("igo.room", null);
-    if (!silent && was) { setHash(""); G = loadLocal() || freshGame(cfg); derive(); }
+    if (!silent && was) { setHash(""); review = null; G = loadLocal() || freshGame(cfg); derive(); }
   }
   async function createRoom() {
     if (!db || busy) return;
@@ -1439,6 +1524,8 @@ input[type="range"]:disabled{opacity:.5}
     flashTimer = setTimeout(() => { flashTimer = 0; render(); }, 2200);
   }
   function clickPoint(i) {
+    if (review) return tryMove(i);
+    if (sharedView) return;
     if (G.phase === "score") return toggleDead(i);
     if (G.phase !== "play") return;
     if (roomCode) {
@@ -1452,6 +1539,23 @@ input[type="range"]:disabled{opacity:.5}
     if (!r.ok) return flash(r.why === "ko" ? "打劫：不能还原之前出现过的局面，先在别处下一手" : "禁着点：这里落子没有气");
     hover = -1;
     apply({ moves: [...G.moves, [i, st.turn]], undo: 0 });
+  }
+  function tryMove(i) {
+    if (st.board[i]) return;
+    const r = tryPlace(st.board, i, st.turn, st.seen);
+    if (!r.ok) return flash(r.why === "ko" ? "打劫：不能还原之前出现过的局面" : "禁着点：这里落子没有气");
+    review.try.push([i, st.turn]);
+    hover = -1;
+    derive();
+  }
+  const curIdx = () => (review ? review.idx : G.moves.length);
+  function setReview(idx, pinned) {
+    const total = G.moves.length;
+    idx = Math.max(0, Math.min(total, idx | 0));
+    review = idx >= total && !pinned ? null : { idx, try: [], pinned: !!pinned };
+    hover = -1;
+    derive();
+    if (isCube() && st.last >= 0) showPoint(st.last, true);
   }
   function toggleDead(i) {
     if (roomCode && (me === 0 || isOut(me))) return;
@@ -1506,6 +1610,7 @@ input[type="range"]:disabled{opacity:.5}
     else apply({ ok: { [K(me)]: true } });
   }
   function rematch(rotate) {
+    review = null;
     const patch = { moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null };
     if (rotate && roomCode) {
       const n = NP(), seats = {};
@@ -1518,7 +1623,7 @@ input[type="range"]:disabled{opacity:.5}
   }
   function setCfg(part) {
     if (shapeLocked()) return;
-    hover = -1;
+    hover = -1; review = null;
     apply({ cfg: part, moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null });
   }
   function takeSeat(c) {
@@ -1684,8 +1789,18 @@ input[type="range"]:disabled{opacity:.5}
     drawPreview();
     if (!wasOpen) requestAnimationFrame(drawPreview);
   }
+  function reviewText() {
+    if (review.try.length) return `试下中 · 轮到 ${C(st.turn)} · 不会影响对局`;
+    if (review.pinned && review.idx >= G.moves.length) return "试下：在棋盘上点就能落子，不会影响对局";
+    if (review.idx === 0) return "复盘 · 开局，还没有落子";
+    const [p, c] = G.moves[review.idx - 1];
+    const where = p < 0 ? " 停一手" : isCube() ? "" : ` ${LET[p % SH.N]}${SH.N - Math.floor(p / SH.N)}`;
+    return `复盘 · 第 ${review.idx} 手 · ${C(c)}${where} · 点棋盘可以试下`;
+  }
   function statusText() {
+    if (review) return reviewText();
     const n = G.moves.length + 1, online = !!roomCode;
+    if (sharedView) return G.phase === "end" ? "分享的棋谱 · 对局结束" : `分享的棋谱 · 共 ${G.moves.length} 手`;
     if (G.phase === "score") return "数子阶段";
     if (G.phase === "end") return "对局结束";
     if (online && !allSeated()) return `等待玩家加入（${seatedCount()}/${NP()}），把邀请链接发给朋友`;
@@ -1694,18 +1809,31 @@ input[type="range"]:disabled{opacity:.5}
     if (online && me && !isOut(me)) return note + (me === st.turn ? `轮到你（${C(me)}） · 第 ${n} 手` : `等 ${C(st.turn)} 落子 · 第 ${n} 手`);
     return note + `${online ? "观战 · " : ""}轮到 ${C(st.turn)} · 第 ${n} 手`;
   }
+  function resultLine() {
+    const r = G.result, np = NP();
+    if (!r) return "";
+    if (r.kind === "resign") return `${C(r.winner)} ${np === 2 ? "中盘胜" : "胜"}`;
+    if (np === 2) return r.winner ? `${C(r.winner)} 胜 ${fmt(r.margin)} 目` : "和棋";
+    return r.winner ? `${C(r.winner)} 胜` : "平局";
+  }
   function renderBanner() {
     const box = $("banner"), acts = $("bannerActs"), np = NP();
     let t = "", s = "";
     acts.replaceChildren();
     box.classList.remove("final");
-    if (G.phase === "play" && roomCode && G.undo) {
+    if (sharedView) {
+      t = "正在看分享的棋谱";
+      s = G.result ? `结果：${resultLine()}` : `共 ${G.moves.length} 手，还没下完`;
+      acts.append(mkBtn("关闭棋谱", closeShared));
+    } else if (G.phase === "play" && roomCode && G.undo) {
       if (G.undo === me) { t = "已请求悔棋，等其他人回应"; acts.append(mkBtn("撤回请求", () => apply({ undo: 0 }))); }
       else if (me && !isOut(me)) {
         t = np === 2 ? "对方请求悔棋" : `${C(G.undo)} 请求悔棋`;
         s = `同意后退回到${np === 2 ? "对方" : " " + C(G.undo) + " "}上一手之前`;
         acts.append(mkBtn("同意", () => answerUndo(true), "primary"), mkBtn("拒绝", () => answerUndo(false)));
       } else t = `${C(G.undo)} 请求悔棋`;
+    } else if (review) {
+      // nothing: the review bar and status line say where you are
     } else if (G.phase === "score" && sc) {
       if (np === 2) {
         const d = sc.totals[1] - sc.totals[2];
@@ -1822,9 +1950,23 @@ input[type="range"]:disabled{opacity:.5}
     renderBanner();
 
     // actions
-    $("actPlay").hidden = phase !== "play";
-    $("actScore").hidden = phase !== "score";
-    $("actEnd").hidden = phase !== "end";
+    const inReview = !!review, total = G.moves.length, cur = curIdx();
+    $("actPlay").hidden = inReview || sharedView || phase !== "play";
+    $("actScore").hidden = inReview || sharedView || phase !== "score";
+    $("actEnd").hidden = inReview || sharedView || phase !== "end";
+    $("actReview").hidden = !inReview;
+    $("tryUndoBtn").disabled = !inReview || !review.try.length;
+    $("liveBtn").textContent = sharedView ? "回到最后一手" : "回到对局";
+    $("reviewBtn").disabled = !total;
+    $("reviewBar").hidden = !total && !inReview;
+    const rg = $("rvRange");
+    rg.max = String(total);
+    if (document.activeElement !== rg) rg.value = String(cur);
+    $("rvFirst").disabled = $("rvPrev").disabled = cur <= 0 && !(inReview && review.try.length);
+    $("rvNext").disabled = $("rvLast").disabled = !inReview;
+    $("rvCount").textContent = inReview ? `第 ${cur} / ${total} 手` + (review.try.length ? ` · 试下 ${review.try.length} 手` : "") : `共 ${total} 手`;
+    $("numsToggle").checked = showNums;
+    $("rvTry").hidden = inReview;
     const seated = !online || me !== 0;
     const activeMe = !online || (me !== 0 && !isOut(me));
     $("undoBtn").disabled = online ? (!activeMe || !G.moves.some((m) => m[1] === me) || (G.undo && G.undo !== me)) : !G.moves.length;
@@ -1870,7 +2012,7 @@ input[type="range"]:disabled{opacity:.5}
     lh.hidden = !locked;
     lh.textContent = me === 0 ? "观战时不能修改棋盘" : "对局进行中，棋盘已锁定，终局后可以改";
 
-    cv.style.cursor = canPlay() || (phase === "score" && activeMe) ? "pointer" : "default";
+    cv.style.cursor = ghostOk() || (!sharedView && phase === "score" && activeMe) ? "pointer" : "default";
   }
 
   /* ---------- events ---------- */
@@ -1918,7 +2060,7 @@ input[type="range"]:disabled{opacity:.5}
   $("coords").addEventListener("change", (e) => { showCoords = e.target.checked; ls.set("igo.coords", showCoords ? "1" : "0"); layout(); });
 
   $("tabLocal").addEventListener("click", () => { tab = "local"; roomErr(""); if (roomCode) leaveRoom(); else render(); });
-  $("tabOnline").addEventListener("click", () => { tab = "online"; render(); });
+  $("tabOnline").addEventListener("click", () => { if (sharedView) closeShared(); tab = "online"; render(); });
   $("pickerClose").addEventListener("click", closePicker);
   $("picker").addEventListener("click", (e) => { if (e.target === e.currentTarget) closePicker(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && pickerSeat) closePicker(); });
@@ -1932,6 +2074,40 @@ input[type="range"]:disabled{opacity:.5}
   $("createBtn").addEventListener("click", createRoom);
   $("joinForm").addEventListener("submit", (e) => { e.preventDefault(); joinRoom($("codeIn").value); });
   $("leaveBtn").addEventListener("click", () => { tab = "online"; roomErr(""); leaveRoom(); });
+  function copyText(text, btn, label, failMsg) {
+    const done = () => { btn.textContent = "已复制"; setTimeout(() => { btn.textContent = label; }, 1600); };
+    const fallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.append(ta); ta.select();
+      let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+      ta.remove();
+      if (ok) done(); else roomErr(failMsg + text);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  }
+  $("rvFirst").addEventListener("click", () => setReview(0));
+  $("rvPrev").addEventListener("click", () => setReview(review && review.try.length ? review.idx : curIdx() - 1));
+  $("rvNext").addEventListener("click", () => setReview(curIdx() + (review && review.try.length ? 0 : 1)));
+  $("rvLast").addEventListener("click", () => setReview(G.moves.length));
+  $("rvRange").addEventListener("input", (e) => setReview(+e.target.value));
+  $("rvTry").addEventListener("click", () => setReview(G.moves.length, true));
+  $("reviewBtn").addEventListener("click", () => setReview(0));
+  $("liveBtn").addEventListener("click", () => setReview(G.moves.length));
+  $("tryUndoBtn").addEventListener("click", () => { if (review && review.try.length) { review.try.pop(); hover = -1; derive(); } });
+  $("numsToggle").addEventListener("change", (e) => { showNums = e.target.checked; ls.set("igo.nums", showNums ? "1" : "0"); draw(); });
+  $("rvShare").addEventListener("click", () => copyText(shareLink(), $("rvShare"), "复制复盘链接", "没能自动复制，复盘链接是："));
+  document.addEventListener("keydown", (e) => {
+    if (pickerSeat || e.altKey || e.ctrlKey || e.metaKey) return;
+    const tg = e.target && e.target.tagName;
+    if (tg === "INPUT" || tg === "TEXTAREA" || tg === "SELECT") return;
+    if (!G.moves.length) return;
+    const map = { ArrowLeft: -1, ArrowRight: 1 };
+    if (e.key in map) { e.preventDefault(); $("rv" + (map[e.key] < 0 ? "Prev" : "Next")).click(); }
+    else if (e.key === "Home") { e.preventDefault(); setReview(0); }
+    else if (e.key === "End") { e.preventDefault(); setReview(G.moves.length); }
+  });
   $("copyBtn").addEventListener("click", () => {
     const text = inviteLink(), btn = $("copyBtn");
     const done = () => { btn.textContent = "已复制"; setTimeout(() => { btn.textContent = "复制邀请链接"; }, 1600); };
@@ -1946,7 +2122,34 @@ input[type="range"]:disabled{opacity:.5}
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
     else fallback();
   });
+  const b64url = (str) => btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const unb64url = (str) => decodeURIComponent(escape(atob(str.replace(/-/g, "+").replace(/_/g, "/"))));
+  function shareLink() {
+    const o = { v: 2, cfg: G.cfg, moves: encMoves(G.moves), styles: G.styles, dead: G.dead.join(","), resigned: G.resigned, phase: G.phase, result: G.result };
+    return location.origin + location.pathname + "#g=" + b64url(JSON.stringify(o));
+  }
+  let savedLocal = null;
+  function openShared(raw) {
+    let g;
+    try { g = sanitize(fromWire(JSON.parse(unb64url(raw)))); } catch (e) { flash("这个复盘链接打不开，可能复制得不完整"); return false; }
+    if (roomCode) leaveRoom(true);
+    if (!sharedView) savedLocal = G;
+    sharedView = true; review = null; tab = "local";
+    G = g;
+    if (G.phase === "score") G.phase = "play";
+    derive();
+    return true;
+  }
+  function closeShared() {
+    sharedView = false; review = null;
+    G = savedLocal || loadLocal() || freshGame(G.cfg);
+    savedLocal = null;
+    setHash("");
+    derive();
+  }
   window.addEventListener("hashchange", () => {
+    const rawHash = location.hash.replace("#", "");
+    if (rawHash.startsWith("g=")) { openShared(rawHash.slice(2)); return; }
     const h = location.hash.replace("#", "").toUpperCase();
     if (db && /^[A-Z0-9]{4}$/.test(h) && h !== roomCode) { tab = "online"; joinRoom(h); }
   });
@@ -1959,6 +2162,10 @@ input[type="range"]:disabled{opacity:.5}
   if (mq.addEventListener) mq.addEventListener("change", refresh);
 
   derive();
+  {
+    const rawHash = location.hash.replace("#", "");
+    if (rawHash.startsWith("g=")) openShared(rawHash.slice(2));
+  }
 
   F = await initNet();
   db = F ? makeDb(F) : null;
@@ -1968,7 +2175,7 @@ input[type="range"]:disabled{opacity:.5}
     const fromLink = /^[A-Za-z0-9]{4}$/.test(h);
     const code = fromLink ? h.toUpperCase() : ls.get("igo.room");
     if (fromLink) tab = "online";
-    if (db && code) { tab = "online"; joinRoom(code); }
+    if (db && code && !sharedView) { tab = "online"; joinRoom(code); }
     else render();
   }
 </script>
