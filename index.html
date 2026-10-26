@@ -43,7 +43,12 @@ body{
 }
 .app{max-width:1240px; margin:0 auto; display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:36px; align-items:start}
 .stage{min-width:0; display:flex; justify-content:center; position:sticky; top:20px}
-.board-wrap{width:min(100%, calc(100vh - 40px)); aspect-ratio:1/1; max-width:100%}
+.board-wrap{position:relative; width:min(100%, calc(100vh - 40px)); aspect-ratio:1/1; max-width:100%}
+#board3d{display:block; touch-action:none; cursor:grab; -webkit-tap-highlight-color:transparent}
+.cube-ui{position:absolute; left:8px; right:8px; bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:8px; pointer-events:none}
+.cube-ui > *{pointer-events:auto}
+.cube-tip{font-size:12px; color:var(--muted)}
+.cube-ui .btn{padding:6px 12px; font-size:12px}
 @supports (height:100dvh){ .board-wrap{width:min(100%, calc(100dvh - 40px))} }
 canvas{display:block; touch-action:manipulation; -webkit-tap-highlight-color:transparent}
 
@@ -217,7 +222,14 @@ input[type="range"]:disabled{opacity:.5}
 <body>
 <div class="app">
   <main class="stage">
-    <div class="board-wrap" id="wrap"><canvas id="board" role="img" aria-label="异形围棋棋盘"></canvas></div>
+    <div class="board-wrap" id="wrap">
+      <canvas id="board" role="img" aria-label="异形围棋棋盘"></canvas>
+      <canvas id="board3d" hidden role="img" aria-label="立方体围棋棋盘"></canvas>
+      <div class="cube-ui" id="cubeUi" hidden>
+        <span class="cube-tip">拖动旋转 · 点击落子</span>
+        <button class="btn" id="lastBtn" type="button">看最后一手</button>
+      </div>
+    </div>
   </main>
 
   <aside class="panel">
@@ -306,19 +318,26 @@ input[type="range"]:disabled{opacity:.5}
         </div>
       </div>
       <div class="field">
-        <span class="label">路数</span>
-        <div class="seg" id="sizeSeg" role="group" aria-label="路数">
+        <span class="label">形状</span>
+        <div class="seg two text" id="shapeSeg" role="group" aria-label="形状">
+          <button type="button" data-s="flat" aria-pressed="true">平面</button>
+          <button type="button" data-s="cube" aria-pressed="false">立方体</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label" id="sizeLabel">路数</span>
+        <div class="seg" id="sizeSeg" role="group" aria-label="大小">
           <button type="button" data-n="9" aria-pressed="false">9</button>
           <button type="button" data-n="13" aria-pressed="false">13</button>
           <button type="button" data-n="19" aria-pressed="true">19</button>
         </div>
       </div>
-      <div class="field">
+      <div class="field" id="roughField">
         <div class="row"><label class="label" for="rough">边缘侵蚀</label><span class="val" id="roughVal">55</span></div>
         <input type="range" id="rough" min="0" max="100" value="55">
         <div class="scale"><span>方正</span><span>破碎</span></div>
       </div>
-      <div class="row"><label class="label" for="holes">内部空洞</label><input type="checkbox" class="switch" id="holes" role="switch"></div>
+      <div class="row" id="holesRow"><label class="label" for="holes">内部空洞</label><input type="checkbox" class="switch" id="holes" role="switch"></div>
       <p class="hint" id="multiHint" hidden></p>
       <div class="field" id="komiField">
         <span class="label">贴目（中国规则数子）</span>
@@ -329,9 +348,9 @@ input[type="range"]:disabled{opacity:.5}
           <button type="button" data-k="7.5" aria-pressed="true">7.5</button>
         </div>
       </div>
-      <div class="row"><label class="label" for="coords">坐标</label><input type="checkbox" class="switch" id="coords" role="switch" checked></div>
+      <div class="row" id="coordsRow"><label class="label" for="coords">坐标</label><input type="checkbox" class="switch" id="coords" role="switch" checked></div>
       <button class="btn primary" id="regen" type="button">换一个形状</button>
-      <p class="meta"><span class="mono">No.<span id="seedTxt"></span></span> · <span id="ptsTxt"></span></p>
+      <p class="meta"><span id="seedWrap"><span class="mono">No.<span id="seedTxt"></span></span> · </span><span id="ptsTxt"></span></p>
       <p class="hint" id="lockHint" hidden></p>
     </section>
   </aside>
@@ -413,15 +432,17 @@ input[type="range"]:disabled{opacity:.5}
   }
   function sanitize(d) {
     d = d && typeof d === "object" ? d : {};
-    const g = freshGame({ N: 19, seed: 10000, rough: 55, holes: false, komi: 7.5, players: 2 });
+    const g = freshGame({ shape: "flat", N: 19, seed: 10000, rough: 55, holes: false, komi: 7.5, players: 2 });
     const c = d.cfg && typeof d.cfg === "object" ? d.cfg : {};
-    g.cfg.N = [9, 13, 19].includes(c.N) ? c.N : 19;
+    g.cfg.shape = c.shape === "cube" ? "cube" : "flat";
+    const sizes = g.cfg.shape === "cube" ? [5, 7, 9] : [9, 13, 19];
+    g.cfg.N = sizes.includes(c.N) ? c.N : g.cfg.shape === "cube" ? 7 : 19;
     g.cfg.seed = Number.isFinite(c.seed) ? Math.floor(c.seed) : 10000;
     g.cfg.rough = Number.isFinite(c.rough) ? Math.max(0, Math.min(100, Math.round(c.rough))) : 55;
     g.cfg.holes = !!c.holes;
     g.cfg.komi = KOMIS.includes(c.komi) ? c.komi : 7.5;
     g.cfg.players = [2, 3, 4].includes(c.players) ? c.players : 2;
-    const np = g.cfg.players, max = g.cfg.N * g.cfg.N;
+    const np = g.cfg.players, max = pointCount(g.cfg);
     g.moves = Array.isArray(d.moves) ? d.moves.filter((m) => Array.isArray(m) && Number.isInteger(m[0]) && m[0] >= -1 && m[0] < max && Number.isInteger(m[1]) && m[1] >= 1 && m[1] <= np).map((m) => [m[0], m[1]]) : [];
     const s = d.seats && typeof d.seats === "object" ? d.seats : {};
     const ok = d.ok && typeof d.ok === "object" ? d.ok : {};
@@ -456,7 +477,7 @@ input[type="range"]:disabled{opacity:.5}
   let F = null, db = null, dbReady = false;
   let presRef = null, presUnsubs = [], presenceOn = false, peersMap = {}, lastPresence = "";
   let tab = "local", myColor = 1, me = 0, builtPlayers = 0, pickerSeat = 0;
-  let G = loadLocal() || freshGame({ N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5, players: 2 });
+  let G = loadLocal() || freshGame({ shape: "flat", N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5, players: 2 });
   let showCoords = ls.get("igo.coords") !== "0";
   let SH = { key: "" }, st = null, sc = null;
   let hover = -1, flashTimer = 0, geom = null, staticCv = null, woodCache = { key: "", cv: null };
@@ -548,13 +569,37 @@ input[type="range"]:disabled{opacity:.5}
     }
     return out;
   }
+  function pointCount(cfg) { return cfg.shape === "cube" ? 6 * cfg.N * cfg.N - 12 * cfg.N + 8 : cfg.N * cfg.N; }
+  function isCube() { return SH.cube === true; }
+  // cube surface: points on the six faces; an edge point joins two faces, a corner joins three (3 liberties)
+  function buildCube(N) {
+    const key = new Map(), pts = [];
+    const f = (v) => (v === 0 ? -1 : v === N - 1 ? 1 : 0);
+    for (let x = 0; x < N; x++) for (let y = 0; y < N; y++) for (let z = 0; z < N; z++) {
+      const n = [f(x), f(y), f(z)], kind = Math.abs(n[0]) + Math.abs(n[1]) + Math.abs(n[2]);
+      if (!kind) continue;
+      key.set(x + "," + y + "," + z, pts.length);
+      pts.push({ c: [x, y, z], n, kind });
+    }
+    const adj = pts.map(({ c: [x, y, z] }) => {
+      const r = [];
+      for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+        const j = key.get(x + dx + "," + (y + dy) + "," + (z + dz));
+        if (j !== undefined) r.push(j);
+      }
+      return r;
+    });
+    return { cube: true, N, size: pts.length, act: new Uint8Array(pts.length).fill(1), adj, cnt: pts.length, pts, seed: 0 };
+  }
   function ensureShape(cfg) {
-    const key = [cfg.N, cfg.seed, cfg.rough, cfg.holes ? 1 : 0].join("|");
+    const cube = cfg.shape === "cube";
+    const key = cube ? "cube|" + cfg.N : [cfg.N, cfg.seed, cfg.rough, cfg.holes ? 1 : 0].join("|");
     if (SH.key === key) return false;
+    if (cube) { SH = buildCube(cfg.N); SH.key = key; return true; }
     const r = generate(cfg.N, cfg.seed, cfg.rough / 100, !!cfg.holes);
     const adj = [];
     for (let i = 0; i < r.a.length; i++) adj.push(r.a[i] ? nb4(i, cfg.N).filter((q) => r.a[q]) : []);
-    SH = { key, N: cfg.N, seed: cfg.seed, act: r.a, adj, cnt: r.c };
+    SH = { key, N: cfg.N, size: cfg.N * cfg.N, cube: false, seed: cfg.seed, act: r.a, adj, cnt: r.c };
     return true;
   }
 
@@ -588,7 +633,7 @@ input[type="range"]:disabled{opacity:.5}
     return { ok: true, board: b, taken, key };
   }
   function replay(moves) {
-    const board = new Int8Array(SH.N * SH.N), caps = [0, 0, 0, 0, 0];
+    const board = new Int8Array(SH.size), caps = [0, 0, 0, 0, 0];
     const seen = new Set([board.join("")]);
     let last = -1, lastColor = 0;
     for (const [p, c] of moves) {
@@ -601,9 +646,9 @@ input[type="range"]:disabled{opacity:.5}
     return { board, caps, last, lastColor, seen };
   }
   function score(board, deadArr) {
-    const N = SH.N, b = board.slice(), np = NP();
+    const b = board.slice(), np = NP();
     for (const d of deadArr) b[d] = 0;
-    const terr = new Int8Array(N * N), seen = new Uint8Array(N * N), areas = [0, 0, 0, 0, 0];
+    const terr = new Int8Array(SH.size), seen = new Uint8Array(SH.size), areas = [0, 0, 0, 0, 0];
     for (let i = 0; i < b.length; i++) if (SH.act[i] && b[i]) areas[b[i]]++;
     for (let i = 0; i < b.length; i++) {
       if (!SH.act[i] || b[i] || seen[i]) continue;
@@ -638,6 +683,9 @@ input[type="range"]:disabled{opacity:.5}
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
   function layout() {
+    const cubeMode = isCube();
+    cv.hidden = cubeMode; $("board3d").hidden = !cubeMode; $("cubeUi").hidden = !cubeMode;
+    if (cubeMode) { cubeEnsure(); return; }
     const s = Math.floor(wrap.clientWidth);
     if (!s || !SH.act) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
@@ -843,7 +891,245 @@ input[type="range"]:disabled{opacity:.5}
     paintStone(g, size / 2 - R * 0.06, size / 2 - R * 0.1, R, STYLES[id], 29);
   }
 
+  /* ---------- cube board (Three.js, loaded on demand) ---------- */
+  const THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+  let c3 = null, c3State = "idle";
+  function loadThree() {
+    return new Promise((res, rej) => {
+      if (window.THREE) return res();
+      const sc = document.createElement("script");
+      sc.src = THREE_URL; sc.onload = () => res(); sc.onerror = rej;
+      document.head.append(sc);
+    });
+  }
+  function cubeEnsure() {
+    if (c3State === "idle") {
+      c3State = "loading";
+      loadThree().then(() => { setupCube(); c3State = "ready"; if (isCube()) cubeEnsure(); }, () => { c3State = "failed"; flash("立方体棋盘的 3D 组件没加载出来，检查网络后刷新再试"); });
+      return;
+    }
+    if (c3State !== "ready") return;
+    cubeResize();
+    if (c3.key !== SH.key) cubeBuild();
+    cubeDraw();
+  }
+  function paintWood512(c) {
+    const g = c.getContext("2d"), r = rnd(4243);
+    g.fillStyle = "#E2B46E"; g.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 190; i++) {
+      g.strokeStyle = r() < 0.62 ? `rgba(130,76,26,${0.05 + r() * 0.12})` : `rgba(255,240,205,${0.06 + r() * 0.1})`;
+      g.lineWidth = 0.6 + r() * 1.6;
+      const x0 = r() * 512;
+      g.beginPath();
+      for (let y = 0; y <= 512; y += 8) { const x = x0 + 7 * Math.sin(y * 0.011 + x0 * 0.01); if (y) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.stroke();
+    }
+  }
+  function setupCube() {
+    const T = THREE, canvas = $("board3d");
+    const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
+    const scene = new T.Scene(), camera = new T.PerspectiveCamera(35, 1, 0.1, 100);
+    camera.position.set(0, 0, 4.4 / Math.tan((17.5 * Math.PI) / 180));
+    scene.add(new T.AmbientLight(0xffffff, 0.62));
+    const d1 = new T.DirectionalLight(0xffffff, 0.8); d1.position.set(4, 7, 9); scene.add(d1);
+    const d2 = new T.DirectionalLight(0xffffff, 0.3); d2.position.set(-7, -3, -5); scene.add(d2);
+    const root = new T.Group(); root.rotation.set(0.55, -0.75, 0); scene.add(root);
+    const wc = document.createElement("canvas"); wc.width = wc.height = 512; paintWood512(wc);
+    c3 = { T, renderer, scene, camera, root, canvas, key: "", size: 0, dirty: true, anim: null, ray: new T.Raycaster(), ndc: new T.Vector2(), Z: new T.Vector3(0, 0, 1), wood: new T.CanvasTexture(wc), mats: new Map(), lastSeen: -1 };
+    bindCube();
+    const frame = (t) => {
+      if (c3.anim) {
+        const an = c3.anim, k = an.dur ? Math.min(1, (t - an.t0) / an.dur) : 1, e = 1 - Math.pow(1 - Math.max(0, k), 3);
+        c3.root.quaternion.copy(an.from).slerp(an.to, e);
+        if (k >= 1) c3.anim = null;
+        c3.dirty = true;
+      }
+      if (c3.dirty && isCube()) { c3.renderer.render(c3.scene, c3.camera); c3.dirty = false; }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+  function cubeResize() {
+    const w = Math.floor(wrap.clientWidth);
+    if (!w || c3.size === w) return;
+    c3.size = w;
+    c3.renderer.setSize(w, w);
+    c3.camera.aspect = 1; c3.camera.updateProjectionMatrix();
+    c3.dirty = true;
+  }
+  function cubeBuild() {
+    const { T, root } = c3, N = SH.N, sp = 4 / (N - 1), h = (N - 1) / 2;
+    while (root.children.length) root.remove(root.children[0]);
+    c3.key = SH.key; c3.s = sp; c3.r = sp * 0.46;
+    c3.P = SH.pts.map(({ c }) => new T.Vector3(c[0] - h, c[1] - h, c[2] - h).multiplyScalar(sp));
+    c3.Nv = SH.pts.map(({ n }) => new T.Vector3(n[0], n[1], n[2]).normalize());
+    c3.Q = c3.Nv.map((n) => new T.Quaternion().setFromUnitVectors(c3.Z, n));
+    const L = (N - 1) * sp;
+    c3.box = new T.Mesh(new T.BoxGeometry(L, L, L), new T.MeshStandardMaterial({ map: c3.wood, roughness: 0.8 }));
+    root.add(c3.box);
+    const arr = [];
+    SH.adj.forEach((nb, i) => nb.forEach((j) => {
+      if (j <= i) return;
+      const a = c3.P[i].clone().addScaledVector(c3.Nv[i], 0.008), b = c3.P[j].clone().addScaledVector(c3.Nv[j], 0.008);
+      arr.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    }));
+    const lg = new T.BufferGeometry(); lg.setAttribute("position", new T.Float32BufferAttribute(arr, 3));
+    root.add(new T.LineSegments(lg, new T.LineBasicMaterial({ color: 0x3a240e })));
+    if (N % 2) {
+      const dot = new T.CircleGeometry(sp * 0.1, 20), dm = new T.MeshBasicMaterial({ color: 0x2a180a });
+      SH.pts.forEach((pt, i) => {
+        if (pt.kind !== 1 || pt.c.filter((v) => v === h).length !== 2) return;
+        const o = new T.Mesh(dot, dm); o.quaternion.copy(c3.Q[i]); o.position.copy(c3.P[i]).addScaledVector(c3.Nv[i], 0.01); root.add(o);
+      });
+    }
+    // planar UVs so a top-down stone pattern lands on the dome
+    const geo = new T.SphereGeometry(c3.r, 32, 20), pos = geo.attributes.position, uv = geo.attributes.uv;
+    for (let k = 0; k < pos.count; k++) uv.setXY(k, pos.getX(k) / (2 * c3.r) + 0.5, pos.getY(k) / (2 * c3.r) + 0.5);
+    uv.needsUpdate = true;
+    c3.geo = geo;
+    c3.markGeo = new T.SphereGeometry(c3.r * 0.17, 12, 8);
+    c3.terrGeo = new T.PlaneGeometry(c3.r * 0.55, c3.r * 0.55);
+    c3.stones = new T.Group(); root.add(c3.stones);
+    c3.lastSeen = -1;
+    c3.dirty = true;
+  }
+  function stoneTexCanvas(id) {
+    const sty = STYLES[id], S = 256, R = 128, cvs = document.createElement("canvas");
+    cvs.width = cvs.height = S;
+    const g = cvs.getContext("2d");
+    let f;
+    if (sty.m) {
+      f = g.createLinearGradient(0, 0, S, S);
+      f.addColorStop(0, sty.m[0]); f.addColorStop(0.35, sty.m[1]); f.addColorStop(0.55, sty.m[3]); f.addColorStop(0.75, sty.m[1]); f.addColorStop(1, sty.m[2]);
+    } else {
+      f = g.createRadialGradient(R, R, 0, R, R, R);
+      f.addColorStop(0, sty.c[1]); f.addColorStop(0.72, sty.c[1]); f.addColorStop(1, sty.c[2]);
+    }
+    g.fillStyle = f; g.fillRect(0, 0, S, S);
+    const r = rnd(97);
+    if (sty.stripes) {
+      g.strokeStyle = "rgba(120,100,70,0.16)"; g.lineWidth = 5;
+      for (let k = 1; k < 6; k++) { g.beginPath(); g.arc(-0.6 * R, R * (1.2 + (r() - 0.5) * 0.3), R * (0.9 + k * 0.28), -0.6, 0.6); g.stroke(); }
+    }
+    if (sty.spots) {
+      for (let k = 0; k < 9; k++) {
+        g.fillStyle = `rgba(45,20,5,${0.35 + r() * 0.3})`;
+        g.beginPath(); g.ellipse(R + (r() - 0.5) * 1.6 * R, R + (r() - 0.5) * 1.6 * R, R * (0.12 + r() * 0.22), R * (0.08 + r() * 0.14), r() * 3, 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (sty.stars) {
+      for (let k = 0; k < 16; k++) {
+        g.fillStyle = `rgba(255,255,255,${0.5 + r() * 0.5})`;
+        g.beginPath(); g.arc(R + (r() - 0.5) * 1.7 * R, R + (r() - 0.5) * 1.7 * R, R * (0.025 + r() * 0.04), 0, Math.PI * 2); g.fill();
+      }
+    }
+    return cvs;
+  }
+  function mat3(id, mode) {
+    const k = id + ":" + mode;
+    let m = c3.mats.get(k);
+    if (m) return m;
+    const sty = STYLES[id], T = c3.T;
+    let tex = c3.mats.get(id + ":tex");
+    if (!tex) { tex = new T.CanvasTexture(stoneTexCanvas(id)); c3.mats.set(id + ":tex", tex); }
+    m = new T.MeshStandardMaterial({ map: tex, roughness: sty.m ? 0.28 : sty.glass ? 0.14 : 0.36, metalness: sty.m ? 0.45 : 0.03, transparent: mode > 0, opacity: mode === 1 ? 0.38 : mode === 2 ? 0.45 : 1 });
+    c3.mats.set(k, m);
+    return m;
+  }
+  function basic3(color) {
+    const k = "b:" + color;
+    let m = c3.mats.get(k);
+    if (!m) { m = new c3.T.MeshBasicMaterial({ color, side: c3.T.DoubleSide }); c3.mats.set(k, m); }
+    return m;
+  }
+  const flatOf = (i) => (SH.pts[i].kind === 1 ? 0.5 : SH.pts[i].kind === 2 ? 0.72 : 0.85);
+  function cubeDraw() {
+    if (c3State !== "ready" || !c3.stones || c3.key !== SH.key || !st) return;
+    const T = c3.T, grp = c3.stones, r = c3.r;
+    while (grp.children.length) grp.remove(grp.children[0]);
+    const dead = sc ? new Set(G.dead) : null;
+    const put = (i, color, mode) => {
+      const m = new T.Mesh(c3.geo, mat3(ES[color], mode)), fl = flatOf(i);
+      m.quaternion.copy(c3.Q[i]); m.scale.set(1, 1, fl);
+      m.position.copy(c3.P[i]).addScaledVector(c3.Nv[i], r * fl * 0.85);
+      grp.add(m);
+    };
+    for (let i = 0; i < st.board.length; i++) if (st.board[i]) put(i, st.board[i], dead && dead.has(i) ? 1 : 0);
+    if (sc) {
+      for (let i = 0; i < sc.terr.length; i++) {
+        const o = sc.terr[i];
+        if (!o || (st.board[i] && !dead.has(i))) continue;
+        const q = new T.Mesh(c3.terrGeo, basic3(styleOf(o).mark));
+        q.quaternion.copy(c3.Q[i]);
+        q.position.copy(c3.P[i]).addScaledVector(c3.Nv[i], st.board[i] ? r * flatOf(i) * 1.75 + 0.01 : 0.02);
+        grp.add(q);
+      }
+    }
+    if (G.phase === "play" && st.last >= 0 && st.board[st.last]) {
+      const i = st.last, k = new T.Mesh(c3.markGeo, basic3(styleOf(st.board[i]).ring));
+      k.position.copy(c3.P[i]).addScaledVector(c3.Nv[i], r * flatOf(i) * 1.75 + 0.01);
+      grp.add(k);
+    }
+    if (hover >= 0 && !st.board[hover] && canPlay()) put(hover, st.turn, 2);
+    // an opponent's move on the far side turns the cube toward it
+    const n = G.moves.length;
+    if (roomCode && c3.lastSeen >= 0 && n > c3.lastSeen && st.last >= 0 && st.board[st.last] !== me) showPoint(st.last, true);
+    c3.lastSeen = n;
+    c3.dirty = true;
+  }
+  function showPoint(i, onlyIfHidden) {
+    if (c3State !== "ready" || !c3.Nv || i < 0 || i >= c3.Nv.length) return;
+    const T = c3.T, wn = c3.Nv[i].clone().applyQuaternion(c3.root.quaternion);
+    if (onlyIfHidden && wn.z > 0.2) return;
+    const target = new T.Vector3(0.18, 0.28, 1).normalize();
+    const to = new T.Quaternion().setFromUnitVectors(wn, target).multiply(c3.root.quaternion);
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    c3.anim = { from: c3.root.quaternion.clone(), to, t0: performance.now(), dur: reduce ? 0 : 450 };
+  }
+  function cubePick(e) {
+    if (!c3 || !c3.box) return -1;
+    const rc = c3.canvas.getBoundingClientRect();
+    c3.ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+    c3.scene.updateMatrixWorld();
+    c3.ray.setFromCamera(c3.ndc, c3.camera);
+    const hitBox = c3.ray.intersectObject(c3.box);
+    if (!hitBox.length) return -1;
+    const pnt = c3.root.worldToLocal(hitBox[0].point.clone());
+    let bi = -1, bd = Infinity;
+    for (let i = 0; i < c3.P.length; i++) { const d = c3.P[i].distanceToSquared(pnt); if (d < bd) { bd = d; bi = i; } }
+    return Math.sqrt(bd) < c3.s * 0.6 ? bi : -1;
+  }
+  function bindCube() {
+    const el2 = c3.canvas;
+    let down = false, drag = false, lx = 0, ly = 0;
+    el2.addEventListener("pointerdown", (e) => { down = true; drag = false; lx = e.clientX; ly = e.clientY; try { el2.setPointerCapture(e.pointerId); } catch (x) {} });
+    el2.addEventListener("pointermove", (e) => {
+      if (!down) {
+        if (e.pointerType === "mouse") { const i = cubePick(e); if (i !== hover) { hover = i; cubeDraw(); } }
+        return;
+      }
+      const dx = e.clientX - lx, dy = e.clientY - ly;
+      if (!drag && Math.hypot(dx, dy) < 6) return;
+      if (!drag) { drag = true; el2.style.cursor = "grabbing"; if (hover !== -1) { hover = -1; cubeDraw(); } }
+      const T = c3.T;
+      c3.anim = null;
+      c3.root.quaternion
+        .premultiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), dx * 0.009))
+        .premultiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), dy * 0.009));
+      lx = e.clientX; ly = e.clientY; c3.dirty = true;
+    });
+    const end = (e, ok) => {
+      if (down && !drag && ok) { const i = cubePick(e); if (i >= 0) clickPoint(i); }
+      down = false; drag = false; el2.style.cursor = "";
+    };
+    el2.addEventListener("pointerup", (e) => end(e, true));
+    el2.addEventListener("pointercancel", (e) => end(e, false));
+    el2.addEventListener("pointerleave", () => { if (!down && hover !== -1) { hover = -1; cubeDraw(); } });
+  }
+
   function draw() {
+    if (isCube()) { cubeDraw(); return; }
     if (!geom || !staticCv || !st) return;
     const { dpr, step } = geom;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -976,8 +1262,11 @@ input[type="range"]:disabled{opacity:.5}
   function maybeAutoPick() {
     if (!roomCode || !me || G.moves.length || G.phase !== "play" || pickerSeat) return;
     const key = roomCode + ":" + me;
-    if (ls.get("igo.picked") === key) return;
-    ls.set("igo.picked", key);
+    let seen = [];
+    try { seen = JSON.parse(ls.get("igo.picked") || "[]"); } catch (e) {}
+    if (!Array.isArray(seen)) seen = [];
+    if (seen.includes(key)) return;
+    ls.set("igo.picked", JSON.stringify([...seen, key].slice(-30)));
     openPicker(me);
   }
 
@@ -1556,7 +1845,12 @@ input[type="range"]:disabled{opacity:.5}
     // board settings
     const locked = shapeLocked(), cfg = G.cfg;
     document.querySelectorAll("#playersSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.p === np)); b.disabled = locked; });
-    document.querySelectorAll("#sizeSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.n === cfg.N)); b.disabled = locked; });
+    const cubeMode = cfg.shape === "cube", sizes = cubeMode ? [5, 7, 9] : [9, 13, 19];
+    document.querySelectorAll("#shapeSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(b.dataset.s === (cubeMode ? "cube" : "flat"))); b.disabled = locked; });
+    $("sizeLabel").textContent = cubeMode ? "每条棱的点数" : "路数";
+    document.querySelectorAll("#sizeSeg button").forEach((b, k) => { b.dataset.n = sizes[k]; b.textContent = sizes[k]; b.setAttribute("aria-pressed", String(sizes[k] === cfg.N)); b.disabled = locked; });
+    $("roughField").hidden = cubeMode; $("holesRow").hidden = cubeMode; $("coordsRow").hidden = cubeMode; $("regen").hidden = cubeMode; $("seedWrap").hidden = cubeMode;
+    $("lastBtn").disabled = !(st && st.last >= 0);
     document.querySelectorAll("#komiSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.k === cfg.komi)); b.disabled = locked; });
     $("komiField").hidden = np !== 2;
     const mh = $("multiHint");
@@ -1571,7 +1865,7 @@ input[type="range"]:disabled{opacity:.5}
     $("coords").checked = showCoords;
     $("regen").disabled = locked;
     $("seedTxt").textContent = cfg.seed;
-    $("ptsTxt").textContent = `${SH.cnt} 个交叉点 / 满盘 ${cfg.N * cfg.N}`;
+    $("ptsTxt").textContent = cubeMode ? `立方体 · ${SH.cnt} 个交叉点 · 8 个角各只有 3 口气` : `${SH.cnt} 个交叉点 / 满盘 ${cfg.N * cfg.N}`;
     const lh = $("lockHint");
     lh.hidden = !locked;
     lh.textContent = me === 0 ? "观战时不能修改棋盘" : "对局进行中，棋盘已锁定，终局后可以改";
@@ -1610,6 +1904,12 @@ input[type="range"]:disabled{opacity:.5}
   $("swapBtn").addEventListener("click", () => rematch(true));
 
   document.querySelectorAll("#playersSeg button").forEach((b) => b.addEventListener("click", () => { if (+b.dataset.p !== NP()) setCfg({ players: +b.dataset.p }); }));
+  document.querySelectorAll("#shapeSeg button").forEach((b) => b.addEventListener("click", () => {
+    const shape = b.dataset.s;
+    if ((G.cfg.shape === "cube" ? "cube" : "flat") === shape) return;
+    setCfg({ shape, N: shape === "cube" ? 7 : 19 });
+  }));
+  $("lastBtn").addEventListener("click", () => { if (st && st.last >= 0) showPoint(st.last, false); });
   document.querySelectorAll("#sizeSeg button").forEach((b) => b.addEventListener("click", () => { if (+b.dataset.n !== G.cfg.N) setCfg({ N: +b.dataset.n }); }));
   document.querySelectorAll("#komiSeg button").forEach((b) => b.addEventListener("click", () => { if (!shapeLocked()) apply({ cfg: { komi: +b.dataset.k } }); }));
   $("rough").addEventListener("input", (e) => setCfg({ rough: +e.target.value }));
@@ -1653,7 +1953,7 @@ input[type="range"]:disabled{opacity:.5}
 
   let raf = 0;
   new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); }).observe(wrap);
-  const refresh = () => { if (geom) { buildStatic(); draw(); } };
+  const refresh = () => { if (isCube()) { draw(); return; } if (geom) { buildStatic(); draw(); } };
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(refresh);
   const mq = window.matchMedia("(prefers-color-scheme: dark)");
   if (mq.addEventListener) mq.addEventListener("change", refresh);
