@@ -158,6 +158,9 @@ canvas.chip{width:22px; height:22px; display:block}
 .banner-acts .btn{flex:1 1 0}
 
 .actions > div{display:flex; gap:8px}
+.actions > #actPlay{display:grid; grid-template-columns:repeat(6,minmax(0,1fr))}
+#actPlay .btn{grid-column:span 2}
+#actPlay .btn.wide{grid-column:span 3}
 .actions .btn{flex:1 1 0; min-width:0}
 .btn{
   font:inherit; font-size:13px; padding:9px 6px; border-radius:8px; border:1px solid var(--rule);
@@ -319,8 +322,9 @@ input[type="range"]:disabled{opacity:.5}
       <div id="actPlay">
         <button class="btn" id="undoBtn" type="button">悔棋</button>
         <button class="btn" id="passBtn" type="button">停一手</button>
-        <button class="btn" id="resignBtn" type="button">认输</button>
-        <button class="btn" id="resetBtn" type="button">重新开局</button>
+        <button class="btn" id="scoreBtn" type="button">申请数子</button>
+        <button class="btn wide" id="resignBtn" type="button">认输</button>
+        <button class="btn wide" id="resetBtn" type="button">重新开局</button>
       </div>
       <div id="actScore" hidden>
         <button class="btn primary" id="confirmBtn" type="button">确认结果</button>
@@ -450,7 +454,7 @@ input[type="range"]:disabled{opacity:.5}
 
   /* ---------- game record ---------- */
   function freshGame(cfg) {
-    return { v: 2, cfg: { ...cfg }, moves: [], seats: { b: "", w: "", r: "", u: "" }, styles: { ...DEFAULT_STYLES }, phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null };
+    return { v: 2, cfg: { ...cfg }, moves: [], seats: { b: "", w: "", r: "", u: "" }, styles: { ...DEFAULT_STYLES }, phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, sreq: 0, sagree: allFalse(), result: null };
   }
   function merge(a, b) {
     const out = a && typeof a === "object" && !Array.isArray(a) ? { ...a } : {};
@@ -488,6 +492,9 @@ input[type="range"]:disabled{opacity:.5}
     g.phase = ["play", "score", "end"].includes(d.phase) ? d.phase : "play";
     g.dead = Array.isArray(d.dead) ? d.dead.filter((x) => Number.isInteger(x) && x >= 0 && x < max) : [];
     g.undo = Number.isInteger(d.undo) && d.undo >= 1 && d.undo <= np ? d.undo : 0;
+    g.sreq = Number.isInteger(d.sreq) && d.sreq >= 1 && d.sreq <= np ? d.sreq : 0;
+    const sa = d.sagree && typeof d.sagree === "object" ? d.sagree : {};
+    for (const k of KEYS) g.sagree[k] = sa[k] === true;
     const r = d.result;
     if (r && typeof r === "object" && (r.kind === "resign" || r.kind === "score")) {
       g.result = { kind: r.kind, winner: Number.isInteger(r.winner) && r.winner >= 0 && r.winner <= np ? r.winner : 0 };
@@ -1538,7 +1545,7 @@ input[type="range"]:disabled{opacity:.5}
     const r = tryPlace(st.board, i, st.turn, st.seen);
     if (!r.ok) return flash(r.why === "ko" ? "打劫：不能还原之前出现过的局面，先在别处下一手" : "禁着点：这里落子没有气");
     hover = -1;
-    apply({ moves: [...G.moves, [i, st.turn]], undo: 0 });
+    apply({ moves: [...G.moves, [i, st.turn]], undo: 0, sreq: 0, sagree: allFalse() });
   }
   function tryMove(i) {
     if (st.board[i]) return;
@@ -1570,8 +1577,8 @@ input[type="range"]:disabled{opacity:.5}
     let run = 0;
     for (let j = moves.length - 1; j >= 0 && moves[j][0] === -1; j--) run++;
     hover = -1;
-    if (run >= activeColors().length) apply({ moves, phase: "score", dead: [], ok: allFalse(), undo: 0 });
-    else apply({ moves, undo: 0 });
+    if (run >= activeColors().length) apply({ moves, phase: "score", dead: [], ok: allFalse(), undo: 0, sreq: 0, sagree: allFalse() });
+    else apply({ moves, undo: 0, sreq: 0, sagree: allFalse() });
   }
   function undo() {
     if (!roomCode) {
@@ -1592,11 +1599,27 @@ input[type="range"]:disabled{opacity:.5}
     for (let k = G.moves.length - 1; k >= 0; k--) if (G.moves[k][1] === req) { idx = k; break; }
     apply({ moves: idx >= 0 ? G.moves.slice(0, idx) : G.moves, undo: 0 });
   }
+  const toScoring = () => ({ phase: "score", dead: [], ok: allFalse(), undo: 0, sreq: 0, sagree: allFalse() });
+  function requestScore() {
+    if (G.phase !== "play" || !G.moves.length) return;
+    if (!roomCode) return apply(toScoring());
+    if (!me || isOut(me) || !allSeated()) return;
+    if (G.sreq === me) return apply({ sreq: 0, sagree: allFalse() });
+    if (G.sreq) return;
+    apply({ sreq: me, sagree: { ...allFalse(), [K(me)]: true } });
+  }
+  function answerScore(yes) {
+    if (!G.sreq || !me || me === G.sreq || isOut(me)) return;
+    if (!yes) return apply({ sreq: 0, sagree: allFalse() });
+    const agreed = { ...G.sagree, [K(me)]: true };
+    if (activeColors().every((c) => c === G.sreq || agreed[K(c)])) apply(toScoring());
+    else apply({ sagree: { [K(me)]: true } });
+  }
   function resign() {
     const loser = roomCode ? me : st.turn;
     if (!loser || isOut(loser)) return;
     const left = activeColors().filter((c) => c !== loser);
-    const patch = { resigned: { [K(loser)]: true }, undo: 0 };
+    const patch = { resigned: { [K(loser)]: true }, undo: 0, sreq: 0, sagree: allFalse() };
     if (left.length === 1) { patch.phase = "end"; patch.result = { kind: "resign", winner: left[0] }; }
     apply(patch);
   }
@@ -1611,7 +1634,7 @@ input[type="range"]:disabled{opacity:.5}
   }
   function rematch(rotate) {
     review = null;
-    const patch = { moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null };
+    const patch = { moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, sreq: 0, sagree: allFalse(), result: null };
     if (rotate && roomCode) {
       const n = NP(), seats = {};
       const styles = {};
@@ -1624,7 +1647,7 @@ input[type="range"]:disabled{opacity:.5}
   function setCfg(part) {
     if (shapeLocked()) return;
     hover = -1; review = null;
-    apply({ cfg: part, moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, result: null });
+    apply({ cfg: part, moves: [], phase: "play", dead: [], ok: allFalse(), resigned: allFalse(), undo: 0, sreq: 0, sagree: allFalse(), result: null });
   }
   function takeSeat(c) {
     if (!roomCode) return;
@@ -1832,6 +1855,19 @@ input[type="range"]:disabled{opacity:.5}
         s = `同意后退回到${np === 2 ? "对方" : " " + C(G.undo) + " "}上一手之前`;
         acts.append(mkBtn("同意", () => answerUndo(true), "primary"), mkBtn("拒绝", () => answerUndo(false)));
       } else t = `${C(G.undo)} 请求悔棋`;
+    } else if (G.phase === "play" && roomCode && G.sreq) {
+      const waiting = activeColors().filter((c) => c !== G.sreq && !G.sagree[K(c)]);
+      const progress = np === 2 ? "" : "还没同意：" + waiting.map(C).join("、");
+      if (G.sreq === me) {
+        t = "已申请数子，等其他人同意"; s = progress;
+        acts.append(mkBtn("撤回申请", requestScore));
+      } else if (me && !isOut(me) && !G.sagree[K(me)]) {
+        t = `${np === 2 ? "对方" : C(G.sreq) + " "}申请数子`;
+        s = "同意后进入数子：标出死子，大家确认结果。落子会视为拒绝。";
+        acts.append(mkBtn("同意", () => answerScore(true), "primary"), mkBtn("拒绝", () => answerScore(false)));
+      } else {
+        t = `${C(G.sreq)} 申请数子`; s = me && G.sagree[K(me)] ? `你已同意。${progress}` : progress;
+      }
     } else if (review) {
       // nothing: the review bar and status line say where you are
     } else if (G.phase === "score" && sc) {
@@ -1969,9 +2005,12 @@ input[type="range"]:disabled{opacity:.5}
     $("rvTry").hidden = inReview;
     const seated = !online || me !== 0;
     const activeMe = !online || (me !== 0 && !isOut(me));
-    $("undoBtn").disabled = online ? (!activeMe || !G.moves.some((m) => m[1] === me) || (G.undo && G.undo !== me)) : !G.moves.length;
+    $("undoBtn").disabled = online ? (!activeMe || !G.moves.some((m) => m[1] === me) || (G.undo && G.undo !== me) || !!G.sreq) : !G.moves.length;
     $("undoBtn").textContent = online && G.undo === me ? "撤回悔棋" : "悔棋";
     $("passBtn").disabled = !canPlay();
+    const sb = $("scoreBtn");
+    sb.textContent = !online ? "数子" : G.sreq === me && me ? "撤回数子申请" : "申请数子";
+    sb.disabled = sharedView || !G.moves.length || (online && (!activeMe || !full || !!G.undo || (G.sreq && G.sreq !== me)));
     $("resignBtn").disabled = !activeMe || (online && !full);
     $("resetBtn").disabled = !seated || !G.moves.length;
     const myOk = online && me ? G.ok[K(me)] : false;
@@ -2038,6 +2077,7 @@ input[type="range"]:disabled{opacity:.5}
   $("undoBtn").addEventListener("click", undo);
   $("endUndoBtn").addEventListener("click", undo);
   $("passBtn").addEventListener("click", pass);
+  $("scoreBtn").addEventListener("click", requestScore);
   $("resignBtn").addEventListener("click", (e) => armed2(e.currentTarget, "认输", "确定认输？", resign));
   $("resetBtn").addEventListener("click", (e) => armed2(e.currentTarget, "重新开局", "确定重开？", () => rematch(false)));
   $("confirmBtn").addEventListener("click", confirmScore);
