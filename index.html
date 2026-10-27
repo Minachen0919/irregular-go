@@ -91,9 +91,16 @@ h1{margin:0; font-family:var(--display); font-weight:400; font-size:31px; letter
 canvas.chip{width:22px; height:22px; display:block}
 .chg{font:inherit; font-size:12px; padding:2px 10px; border-radius:999px; border:1px solid var(--rule); background:var(--btn); color:var(--ink); cursor:pointer; white-space:nowrap}
 .chg:hover{border-color:var(--muted)}
-.lineup-head{display:grid; gap:2px; padding:0 2px 4px}
-.lineup-head .lt{font-family:var(--display); font-size:22px; letter-spacing:.04em; line-height:1.2}
+.lineup-head{display:grid; gap:4px; padding:0 2px 4px}
+.lineup-head h2{margin:0; font-size:11.5px; font-weight:500; letter-spacing:.24em; color:var(--muted)}
 .lineup-head .ls{font-size:12.5px; color:var(--muted)}
+.app[data-stage="setup"] .only-game, .app[data-stage="game"] .only-setup{display:none !important}
+.app[data-stage="setup"] .players{border-top:1px solid var(--rule); padding-top:18px}
+.startrow{display:grid; gap:6px; border-top:1px solid var(--rule); padding-top:14px; padding-bottom:max(10px, env(safe-area-inset-bottom, 0px)); position:sticky; bottom:0; z-index:3; background:var(--bg)}
+.startrow .btn{padding:13px; font-size:15px; font-weight:600}
+.gameinfo{display:grid; gap:10px; border-top:1px solid var(--rule); padding-top:14px}
+.gameinfo .meta{margin:0}
+.board-toast{position:absolute; top:12px; left:50%; transform:translateX(-50%); max-width:calc(100% - 24px); padding:7px 16px; border-radius:999px; background:var(--primary); color:var(--primary-ink); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; box-shadow:0 6px 20px rgba(0,0,0,.18); z-index:2}
 .plist.lineup .player{grid-template-columns:46px minmax(0,1fr) auto; padding:12px 12px 12px 10px; background:var(--surface); border-color:var(--rule)}
 .plist.lineup .chipbtn{width:46px; height:46px}
 .plist.lineup canvas.chip{width:42px; height:42px}
@@ -226,7 +233,7 @@ input[type="range"]:disabled{opacity:.5}
   .panel{display:contents}
   .brand{order:-1}
   .stage{order:0; position:static}
-  .room,.players,.banner,.actions,.shape{order:1}
+  .panel > section{order:1}
   .board-wrap{width:100%}
   h1{font-size:27px}
 }
@@ -234,11 +241,12 @@ input[type="range"]:disabled{opacity:.5}
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="app" data-stage="setup">
   <main class="stage">
     <div class="board-wrap" id="wrap">
       <canvas id="board" role="img" aria-label="异形围棋棋盘"></canvas>
       <canvas id="board3d" hidden role="img" aria-label="立方体围棋棋盘"></canvas>
+      <div class="board-toast" id="boardToast" hidden role="status"></div>
       <div class="cube-ui" id="cubeUi" hidden>
         <span class="cube-tip">拖动旋转 · 点击落子</span>
         <button class="btn" id="lastBtn" type="button">看最后一手</button>
@@ -255,8 +263,8 @@ input[type="range"]:disabled{opacity:.5}
       </div>
     </header>
 
-    <section class="room">
-      <div class="seg two text" role="group" aria-label="对局方式">
+    <section class="room" id="roomSec">
+      <div class="seg two text only-setup" role="group" aria-label="对局方式">
         <button type="button" id="tabLocal" aria-pressed="true">本机对弈</button>
         <button type="button" id="tabOnline" aria-pressed="false">联机对弈</button>
       </div>
@@ -287,62 +295,7 @@ input[type="range"]:disabled{opacity:.5}
       <p class="hint warn" id="roomErr" hidden></p>
     </section>
 
-    <section class="players" aria-live="polite">
-      <div class="lineup-head" id="lineupHead" hidden>
-        <span class="lt">开局前，先选棋子</span>
-        <span class="ls">14 种样式，每人挑一种，别人选过的不能重复。下第一手后也能随时再换。</span>
-      </div>
-      <div class="plist" id="plist"></div>
-      <div class="status" id="status"></div>
-      <p class="hint" id="styleHint" hidden></p>
-      <div class="reviewbar" id="reviewBar" hidden>
-        <div class="rv-row">
-          <button class="rvb" id="rvFirst" type="button" aria-label="回到开局" title="回到开局"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="2" height="10"/><path d="M13 3 6 8l7 5z"/></svg></button>
-          <button class="rvb" id="rvPrev" type="button" aria-label="上一手" title="上一手（←）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 3 4 8l7 5z"/></svg></button>
-          <input type="range" id="rvRange" min="0" max="0" value="0" step="1" aria-label="跳到第几手">
-          <button class="rvb" id="rvNext" type="button" aria-label="下一手" title="下一手（→）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 7 5-7 5z"/></svg></button>
-          <button class="rvb" id="rvLast" type="button" aria-label="最新一手" title="最新一手"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 3 7 5-7 5z"/><rect x="11.5" y="3" width="2" height="10"/></svg></button>
-        </div>
-        <div class="rv-row rv-meta">
-          <span class="rv-count" id="rvCount"></span>
-          <label class="rv-nums" for="numsToggle"><input type="checkbox" class="switch" id="numsToggle" role="switch">手数</label>
-          <button class="linkbtn" id="rvTry" type="button">试下</button>
-          <button class="linkbtn" id="rvShare" type="button">复制复盘链接</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="banner" id="banner" hidden>
-      <p class="bt" id="bannerTxt"></p>
-      <p class="bs" id="bannerSub"></p>
-      <div class="banner-acts" id="bannerActs"></div>
-    </section>
-
-    <section class="actions">
-      <div id="actPlay">
-        <button class="btn" id="undoBtn" type="button">悔棋</button>
-        <button class="btn" id="passBtn" type="button">停一手</button>
-        <button class="btn" id="scoreBtn" type="button">申请数子</button>
-        <button class="btn wide" id="resignBtn" type="button">认输</button>
-        <button class="btn wide" id="resetBtn" type="button">重新开局</button>
-      </div>
-      <div id="actScore" hidden>
-        <button class="btn primary" id="confirmBtn" type="button">确认结果</button>
-        <button class="btn" id="resumeBtn" type="button">继续下棋</button>
-      </div>
-      <div id="actReview" hidden>
-        <button class="btn" id="tryUndoBtn" type="button">撤销试下</button>
-        <button class="btn primary" id="liveBtn" type="button">回到对局</button>
-      </div>
-      <div id="actEnd" hidden>
-        <button class="btn" id="reviewBtn" type="button">从头复盘</button>
-        <button class="btn primary" id="againBtn" type="button">再来一盘</button>
-        <button class="btn" id="swapBtn" type="button">交换黑白再来</button>
-        <button class="btn" id="endUndoBtn" type="button">悔棋</button>
-      </div>
-    </section>
-
-    <section class="shape">
+    <section class="shape only-setup" id="boardSetup">
       <h2>棋盘设置</h2>
       <div class="field">
         <span class="label">颜色数</span>
@@ -387,6 +340,75 @@ input[type="range"]:disabled{opacity:.5}
       <button class="btn primary" id="regen" type="button">换一个形状</button>
       <p class="meta"><span id="seedWrap"><span class="mono">No.<span id="seedTxt"></span></span> · </span><span id="ptsTxt"></span></p>
       <p class="hint" id="lockHint" hidden></p>
+    </section>
+
+    <section class="players" aria-live="polite">
+      <div class="lineup-head" id="lineupHead" hidden>
+        <h2>选棋子</h2>
+        <span class="ls">每人挑一种样式，别人选过的不能重复，开局后也能再换。</span>
+      </div>
+      <div class="plist" id="plist"></div>
+      <div class="status" id="status"></div>
+      <p class="hint" id="styleHint" hidden></p>
+    </section>
+
+    <section class="startrow only-setup" id="startRow">
+      <button class="btn primary" id="startBtn" type="button">开始下棋</button>
+      <p class="hint" id="startHint">第一手落下后设置会收起，点「重新开局」可以再改。</p>
+    </section>
+
+    <section class="banner" id="banner" hidden>
+      <p class="bt" id="bannerTxt"></p>
+      <p class="bs" id="bannerSub"></p>
+      <div class="banner-acts" id="bannerActs"></div>
+    </section>
+
+    <section class="actions only-game">
+      <div id="actPlay">
+        <button class="btn" id="undoBtn" type="button">悔棋</button>
+        <button class="btn" id="passBtn" type="button">停一手</button>
+        <button class="btn" id="scoreBtn" type="button">申请数子</button>
+        <button class="btn wide" id="resignBtn" type="button">认输</button>
+        <button class="btn wide" id="resetBtn" type="button">重新开局</button>
+      </div>
+      <div id="actScore" hidden>
+        <button class="btn primary" id="confirmBtn" type="button">确认结果</button>
+        <button class="btn" id="resumeBtn" type="button">继续下棋</button>
+      </div>
+      <div id="actReview" hidden>
+        <button class="btn" id="tryUndoBtn" type="button">撤销试下</button>
+        <button class="btn primary" id="liveBtn" type="button">回到对局</button>
+      </div>
+      <div id="actEnd" hidden>
+        <button class="btn" id="reviewBtn" type="button">从头复盘</button>
+        <button class="btn primary" id="againBtn" type="button">再来一盘</button>
+        <button class="btn" id="swapBtn" type="button">交换黑白再来</button>
+        <button class="btn" id="endUndoBtn" type="button">悔棋</button>
+      </div>
+    </section>
+
+    <section class="review-sec only-game">
+      <div class="reviewbar" id="reviewBar" hidden>
+        <div class="rv-row">
+          <button class="rvb" id="rvFirst" type="button" aria-label="回到开局" title="回到开局"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="2" height="10"/><path d="M13 3 6 8l7 5z"/></svg></button>
+          <button class="rvb" id="rvPrev" type="button" aria-label="上一手" title="上一手（←）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 3 4 8l7 5z"/></svg></button>
+          <input type="range" id="rvRange" min="0" max="0" value="0" step="1" aria-label="跳到第几手">
+          <button class="rvb" id="rvNext" type="button" aria-label="下一手" title="下一手（→）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 7 5-7 5z"/></svg></button>
+          <button class="rvb" id="rvLast" type="button" aria-label="最新一手" title="最新一手"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 3 7 5-7 5z"/><rect x="11.5" y="3" width="2" height="10"/></svg></button>
+        </div>
+        <div class="rv-row rv-meta">
+          <span class="rv-count" id="rvCount"></span>
+          <label class="rv-nums" for="numsToggle"><input type="checkbox" class="switch" id="numsToggle" role="switch">手数</label>
+          <button class="linkbtn" id="rvTry" type="button">试下</button>
+          <button class="linkbtn" id="rvShare" type="button">复制复盘链接</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="gameinfo only-game" id="gameInfo">
+      <p class="meta" id="gameSummary"></p>
+      <div class="row" id="coordsRow2"><label class="label" for="coords2">坐标</label><input type="checkbox" class="switch" id="coords2" role="switch" checked></div>
+      <p class="hint" id="gameHint"></p>
     </section>
   </aside>
 </div>
@@ -1545,6 +1567,7 @@ input[type="range"]:disabled{opacity:.5}
     const r = tryPlace(st.board, i, st.turn, st.seen);
     if (!r.ok) return flash(r.why === "ko" ? "打劫：不能还原之前出现过的局面，先在别处下一手" : "禁着点：这里落子没有气");
     hover = -1;
+    $("boardToast").hidden = true;
     apply({ moves: [...G.moves, [i, st.turn]], undo: 0, sreq: 0, sagree: allFalse() });
   }
   function tryMove(i) {
@@ -1899,9 +1922,27 @@ input[type="range"]:disabled{opacity:.5}
     $("bannerSub").hidden = !s;
     box.hidden = !t;
   }
+  function boardSummary() {
+    const cfg = G.cfg, np = NP(), bits = [];
+    if (cfg.shape === "cube") bits.push(`立方体 · 每条棱 ${cfg.N} 点`);
+    else bits.push(`${cfg.N} 路 · 侵蚀 ${cfg.rough}${cfg.holes ? " · 有空洞" : ""}`);
+    bits.push(`${SH.cnt} 个交叉点`);
+    bits.push(np === 2 ? `双色 · 贴 ${fmt(cfg.komi)}` : `${np === 3 ? "三" : "四"}色 · 不贴目`);
+    if (cfg.shape !== "cube") bits.push(`No.${cfg.seed}`);
+    return bits.join(" · ");
+  }
+  let toastTimer = 0;
+  function toast(msg) {
+    const t = $("boardToast");
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  }
   function render() {
     if (!st) return;
     me = seatOf(G);
+    const stage = !sharedView && G.phase === "play" && G.moves.length === 0 ? "setup" : "game";
+    $("app").dataset.stage = stage;
     pushPresence();
     const online = !!roomCode, np = NP(), full = allSeated(), phase = G.phase;
     if (myColor > np) myColor = 1;
@@ -2023,6 +2064,17 @@ input[type="range"]:disabled{opacity:.5}
     $("swapBtn").textContent = np === 2 ? "交换黑白再来" : "轮换颜色再来";
     $("endUndoBtn").hidden = online;
 
+    // stage-specific blocks
+    $("roomSec").hidden = stage === "game" && !roomCode && $("roomErr").hidden;
+    const sbtn = $("startBtn");
+    if (roomCode && !full) { sbtn.disabled = true; sbtn.textContent = `等待玩家加入（${seatedCount()}/${np}）`; }
+    else { sbtn.disabled = false; sbtn.textContent = roomCode && me === 0 ? "观战中" : "开始下棋"; }
+    $("gameSummary").textContent = boardSummary();
+    $("coordsRow2").hidden = G.cfg.shape === "cube";
+    $("coords2").checked = showCoords;
+    $("gameHint").textContent = sharedView ? "" : roomCode ? "想换棋盘设置，点「重新开局」回到开局前。" : "想换棋盘设置或改成联机，点「重新开局」回到开局前。";
+    $("gameHint").hidden = sharedView;
+
     // board settings
     const locked = shapeLocked(), cfg = G.cfg;
     document.querySelectorAll("#playersSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.p === np)); b.disabled = locked; });
@@ -2049,7 +2101,7 @@ input[type="range"]:disabled{opacity:.5}
     $("ptsTxt").textContent = cubeMode ? `立方体 · ${SH.cnt} 个交叉点 · 8 个角各只有 3 口气` : `${SH.cnt} 个交叉点 / 满盘 ${cfg.N * cfg.N}`;
     const lh = $("lockHint");
     lh.hidden = !locked;
-    lh.textContent = me === 0 ? "观战时不能修改棋盘" : "对局进行中，棋盘已锁定，终局后可以改";
+    lh.textContent = sharedView ? "正在看分享的棋谱，棋盘设置不能改" : me === 0 ? "观战时不能修改棋盘" : "对局进行中，棋盘已锁定，终局后可以改";
 
     cv.style.cursor = ghostOk() || (!sharedView && phase === "score" && activeMe) ? "pointer" : "default";
   }
@@ -2097,7 +2149,22 @@ input[type="range"]:disabled{opacity:.5}
   $("rough").addEventListener("input", (e) => setCfg({ rough: +e.target.value }));
   $("holes").addEventListener("change", (e) => setCfg({ holes: e.target.checked }));
   $("regen").addEventListener("click", () => setCfg({ seed: rand5() }));
-  $("coords").addEventListener("change", (e) => { showCoords = e.target.checked; ls.set("igo.coords", showCoords ? "1" : "0"); layout(); });
+  const setCoords = (on) => { showCoords = on; ls.set("igo.coords", showCoords ? "1" : "0"); layout(); render(); };
+  $("coords").addEventListener("change", (e) => setCoords(e.target.checked));
+  $("coords2").addEventListener("change", (e) => setCoords(e.target.checked));
+  $("startBtn").addEventListener("click", () => {
+    const rect = wrap.getBoundingClientRect();
+    if (rect.top < 0 || rect.top > window.innerHeight * 0.4) {
+      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      wrap.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    }
+    let msg;
+    if (roomCode && !allSeated()) msg = `等待玩家加入（${seatedCount()}/${NP()}）`;
+    else if (canPlay()) msg = `轮到 ${C(st.turn)}，${isCube() ? "转到想下的面，" : ""}点棋盘落下第一手`;
+    else if (roomCode && me === 0) msg = "你在观战";
+    else msg = `等 ${C(st.turn)} 下第一手`;
+    toast(msg);
+  });
 
   $("tabLocal").addEventListener("click", () => { tab = "local"; roomErr(""); if (roomCode) leaveRoom(); else render(); });
   $("tabOnline").addEventListener("click", () => { if (sharedView) closeShared(); tab = "online"; render(); });
