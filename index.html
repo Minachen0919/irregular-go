@@ -98,6 +98,9 @@ canvas.chip{width:22px; height:22px; display:block}
 .app[data-stage="setup"] .players{border-top:1px solid var(--rule); padding-top:18px}
 .startrow{display:grid; gap:6px; border-top:1px solid var(--rule); padding-top:14px; padding-bottom:max(10px, env(safe-area-inset-bottom, 0px)); position:sticky; bottom:0; z-index:3; background:var(--bg)}
 .startrow .btn{padding:13px; font-size:15px; font-weight:600}
+.stepper{display:flex; align-items:center; gap:6px}
+.stepb{font-size:17px; line-height:1; font-family:var(--body)}
+.stepval{min-width:58px; text-align:center; font-size:13.5px; font-weight:600; font-variant-numeric:tabular-nums}
 .gameinfo{display:grid; gap:10px; border-top:1px solid var(--rule); padding-top:14px}
 .gameinfo .meta{margin:0}
 .board-toast{position:absolute; top:12px; left:50%; transform:translateX(-50%); max-width:calc(100% - 24px); padding:7px 16px; border-radius:999px; background:var(--primary); color:var(--primary-ink); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; box-shadow:0 6px 20px rgba(0,0,0,.18); z-index:2}
@@ -327,6 +330,17 @@ input[type="range"]:disabled{opacity:.5}
       </div>
       <div class="row" id="holesRow"><label class="label" for="holes">内部空洞</label><input type="checkbox" class="switch" id="holes" role="switch"></div>
       <p class="hint" id="multiHint" hidden></p>
+      <div class="field" id="hcField">
+        <div class="row">
+          <span class="label" id="hcLabel">让子</span>
+          <div class="stepper" role="group" aria-labelledby="hcLabel">
+            <button class="rvb stepb" id="hcMinus" type="button" aria-label="少让一子">−</button>
+            <span class="stepval" id="hcVal" aria-live="polite">分先</span>
+            <button class="rvb stepb" id="hcPlus" type="button" aria-label="多让一子">+</button>
+          </div>
+        </div>
+        <p class="hint" id="hcHint" hidden></p>
+      </div>
       <div class="field" id="komiField">
         <span class="label">贴目（中国规则数子）</span>
         <div class="seg four" id="komiSeg" role="group" aria-label="贴目">
@@ -489,7 +503,7 @@ input[type="range"]:disabled{opacity:.5}
   }
   function sanitize(d) {
     d = d && typeof d === "object" ? d : {};
-    const g = freshGame({ shape: "flat", N: 19, seed: 10000, rough: 55, holes: false, komi: 7.5, players: 2 });
+    const g = freshGame({ shape: "flat", N: 19, seed: 10000, rough: 55, holes: false, komi: 7.5, players: 2, handicap: 0 });
     const c = d.cfg && typeof d.cfg === "object" ? d.cfg : {};
     g.cfg.shape = c.shape === "cube" ? "cube" : "flat";
     const sizes = g.cfg.shape === "cube" ? [5, 7, 9] : [9, 13, 19];
@@ -499,6 +513,7 @@ input[type="range"]:disabled{opacity:.5}
     g.cfg.holes = !!c.holes;
     g.cfg.komi = KOMIS.includes(c.komi) ? c.komi : 7.5;
     g.cfg.players = [2, 3, 4].includes(c.players) ? c.players : 2;
+    g.cfg.handicap = g.cfg.players === 2 && Number.isInteger(c.handicap) && c.handicap >= 2 && c.handicap <= 9 ? c.handicap : 0;
     const np = g.cfg.players, max = pointCount(g.cfg);
     g.moves = Array.isArray(d.moves) ? d.moves.filter((m) => Array.isArray(m) && Number.isInteger(m[0]) && m[0] >= -1 && m[0] < max && Number.isInteger(m[1]) && m[1] >= 1 && m[1] <= np).map((m) => [m[0], m[1]]) : [];
     const s = d.seats && typeof d.seats === "object" ? d.seats : {};
@@ -537,7 +552,7 @@ input[type="range"]:disabled{opacity:.5}
   let F = null, db = null, dbReady = false;
   let presRef = null, presUnsubs = [], presenceOn = false, peersMap = {}, lastPresence = "";
   let tab = "local", myColor = 1, me = 0, builtPlayers = 0, pickerSeat = 0;
-  let G = loadLocal() || freshGame({ shape: "flat", N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5, players: 2 });
+  let G = loadLocal() || freshGame({ shape: "flat", N: 19, seed: rand5(), rough: 55, holes: false, komi: 7.5, players: 2, handicap: 0 });
   let showCoords = ls.get("igo.coords") !== "0";
   let showNums = ls.get("igo.nums") === "1";
   // review: null = live game; otherwise { idx: moves shown, try: local variation moves, pinned: stay in review at the live end }
@@ -695,20 +710,47 @@ input[type="range"]:disabled{opacity:.5}
     if (seen && seen.has(key)) return { ok: false, why: "ko" };
     return { ok: true, board: b, taken, key };
   }
+  // handicap: stones on the standard star points when the board has them all (White then moves first);
+  // otherwise Black places them freely as the first N moves
+  const HC_ORDER = {
+    2: ["ur", "ll"], 3: ["ur", "ll", "lr"], 4: ["ur", "ll", "lr", "ul"], 5: ["ur", "ll", "lr", "ul", "c"],
+    6: ["ur", "ll", "lr", "ul", "l", "r"], 7: ["ur", "ll", "lr", "ul", "l", "r", "c"],
+    8: ["ur", "ll", "lr", "ul", "l", "r", "t", "b"], 9: ["ur", "ll", "lr", "ul", "l", "r", "t", "b", "c"],
+  };
+  let hcCache = { key: "", plan: null };
+  function hcPlan() {
+    const n = NP() === 2 ? G.cfg.handicap || 0 : 0;
+    if (!n) return null;
+    const key = SH.key + "|" + n;
+    if (hcCache.key === key) return hcCache.plan;
+    let plan = { mode: "free", n, why: SH.cube ? "cube" : "missing" };
+    if (!SH.cube) {
+      const N = SH.N, lo = N === 9 ? 2 : 3, hi = N - 1 - lo, mid = (N - 1) / 2;
+      const spot = { ur: [hi, lo], ll: [lo, hi], lr: [hi, hi], ul: [lo, lo], c: [mid, mid], l: [lo, mid], r: [hi, mid], t: [mid, lo], b: [mid, hi] };
+      const pts = HC_ORDER[n].map((k) => spot[k][1] * N + spot[k][0]);
+      if (pts.every((q) => SH.act[q])) plan = { mode: "fixed", n, pts };
+    }
+    hcCache = { key, plan };
+    return plan;
+  }
+  const freeN = () => { const pl = hcPlan(); return pl && pl.mode === "free" ? pl.n : 0; };
   function replay(moves) {
     const board = new Int8Array(SH.size), caps = [0, 0, 0, 0, 0];
+    const plan = hcPlan();
+    if (plan && plan.mode === "fixed") for (const q of plan.pts) board[q] = 1;
     const seen = new Set([board.join("")]);
+    const skip = plan && plan.mode === "free" ? plan.n : 0;
     const num = new Int16Array(SH.size);
-    let last = -1, lastColor = 0, k = 0;
+    let last = -1, lastColor = plan && plan.mode === "fixed" ? 1 : 0, k = 0;
     for (const [p, c] of moves) {
       k++;
       lastColor = c;
       if (p < 0) { last = -1; continue; }
       const r = tryPlace(board, p, c, seen);
       if (!r.ok) continue;
-      board.set(r.board); caps[c] += r.taken; last = p; seen.add(r.key); num[p] = k;
+      board.set(r.board); caps[c] += r.taken; last = p; seen.add(r.key); num[p] = k > skip ? k - skip : 0;
     }
-    return { board, caps, last, lastColor, seen, num };
+    return { board, caps, last, lastColor, seen, num, placing: skip && moves.length < skip ? skip - moves.length : 0 };
   }
   function score(board, deadArr) {
     const b = board.slice(), np = NP();
@@ -731,15 +773,15 @@ input[type="range"]:disabled{opacity:.5}
         areas[o] += region.length;
       }
     }
-    const komi = np === 2 ? G.cfg.komi : 0, totals = areas.slice();
-    totals[2] += komi;
+    const komi = np === 2 ? G.cfg.komi : 0, hc = np === 2 ? G.cfg.handicap || 0 : 0, totals = areas.slice();
+    totals[2] += komi + hc;
     let leader = 0, top = -Infinity, second = -Infinity;
     for (const c of activeColors()) {
       if (totals[c] > top) { second = top; top = totals[c]; leader = c; }
       else if (totals[c] === top) { second = top; leader = 0; }
       else if (totals[c] > second) second = totals[c];
     }
-    return { areas, totals, terr, komi, leader, margin: Number.isFinite(second) ? top - second : 0 };
+    return { areas, totals, terr, komi, hc, leader, margin: Number.isFinite(second) ? top - second : 0 };
   }
 
   /* ---------- rendering ---------- */
@@ -1389,7 +1431,7 @@ input[type="range"]:disabled{opacity:.5}
       if (review.idx >= total && !review.try.length && !review.pinned) review = null;
     }
     st = replay(review ? G.moves.slice(0, review.idx).concat(review.try) : G.moves);
-    st.turn = nextActive(st.lastColor || NP());
+    st.turn = st.placing ? 1 : nextActive(st.lastColor || NP());
     sc = !review && (G.phase === "score" || (G.phase === "end" && G.result && G.result.kind === "score")) ? score(st.board, G.dead) : null;
     if (builtPlayers !== NP()) buildPlayers();
     if (changed || !geom) layout(); else draw();
@@ -1595,7 +1637,7 @@ input[type="range"]:disabled{opacity:.5}
     apply({ dead: [...set], ok: allFalse() });
   }
   function pass() {
-    if (!canPlay()) return;
+    if (!canPlay() || st.placing) return;
     const moves = [...G.moves, [-1, st.turn]];
     let run = 0;
     for (let j = moves.length - 1; j >= 0 && moves[j][0] === -1; j--) run++;
@@ -1838,18 +1880,25 @@ input[type="range"]:disabled{opacity:.5}
   function reviewText() {
     if (review.try.length) return `试下中 · 轮到 ${C(st.turn)} · 不会影响对局`;
     if (review.pinned && review.idx >= G.moves.length) return "试下：在棋盘上点就能落子，不会影响对局";
-    if (review.idx === 0) return "复盘 · 开局，还没有落子";
+    const fn = freeN(), hcp = hcPlan();
+    if (review.idx === 0) return hcp && hcp.mode === "fixed" ? `复盘 · 开局，${C(1)} 受让 ${hcp.n} 子` : "复盘 · 开局，还没有落子";
     const [p, c] = G.moves[review.idx - 1];
     const where = p < 0 ? " 停一手" : isCube() ? "" : ` ${LET[p % SH.N]}${SH.N - Math.floor(p / SH.N)}`;
-    return `复盘 · 第 ${review.idx} 手 · ${C(c)}${where} · 点棋盘可以试下`;
+    if (review.idx <= fn) return `复盘 · 让子第 ${review.idx} 颗 · ${C(c)}${where}`;
+    return `复盘 · 第 ${review.idx - fn} 手 · ${C(c)}${where} · 点棋盘可以试下`;
   }
   function statusText() {
     if (review) return reviewText();
-    const n = G.moves.length + 1, online = !!roomCode;
+    const n = G.moves.length - freeN() + 1, online = !!roomCode;
     if (sharedView) return G.phase === "end" ? "分享的棋谱 · 对局结束" : `分享的棋谱 · 共 ${G.moves.length} 手`;
     if (G.phase === "score") return "数子阶段";
     if (G.phase === "end") return "对局结束";
     if (online && !allSeated()) return `等待玩家加入（${seatedCount()}/${NP()}），把邀请链接发给朋友`;
+    if (st.placing) {
+      const left = `还要放 ${st.placing} 颗让子`;
+      if (online && me === 1) return `轮到你（${C(1)}）· ${left}，放在哪里都可以`;
+      return `${C(1)} ${left}`;
+    }
     const lm = G.moves[G.moves.length - 1];
     const note = lm && lm[0] === -1 ? `${C(lm[1])} 停一手 · ` : "";
     if (online && me && !isOut(me)) return note + (me === st.turn ? `轮到你（${C(me)}） · 第 ${n} 手` : `等 ${C(st.turn)} 落子 · 第 ${n} 手`);
@@ -1896,7 +1945,7 @@ input[type="range"]:disabled{opacity:.5}
     } else if (G.phase === "score" && sc) {
       if (np === 2) {
         const d = sc.totals[1] - sc.totals[2];
-        t = `${C(1)} ${sc.areas[1]} : ${C(2)} ${sc.areas[2]} + 贴 ${fmt(sc.komi)}` + (d ? ` · ${C(d > 0 ? 1 : 2)} 领先 ${fmt(Math.abs(d))}` : " · 持平");
+        t = `${C(1)} ${sc.areas[1]} : ${C(2)} ${sc.areas[2]} + 贴 ${fmt(sc.komi)}${sc.hc ? ` + 补还 ${sc.hc}` : ""}` + (d ? ` · ${C(d > 0 ? 1 : 2)} 领先 ${fmt(Math.abs(d))}` : " · 持平");
       } else {
         t = activeColors().map((c) => `${C(c)} ${sc.areas[c]}`).join(" · ") + (sc.leader ? ` · ${C(sc.leader)} 领先` : " · 并列");
       }
@@ -1910,7 +1959,7 @@ input[type="range"]:disabled{opacity:.5}
         s = np === 2 ? `${C(3 - r.winner)} 认输` : "其他玩家都已认输";
       } else if (np === 2) {
         t = r.winner ? `${C(r.winner)} 胜 ${fmt(r.margin)} 目` : "和棋";
-        s = `数子：${C(1)} ${fmt(r.areas.b)} · ${C(2)} ${fmt(r.areas.w)}（含贴 ${fmt(G.cfg.komi)}）`;
+        s = `数子：${C(1)} ${fmt(r.areas.b)} · ${C(2)} ${fmt(r.areas.w)}（含贴 ${fmt(G.cfg.komi)}${G.cfg.handicap ? `、让子补还 ${G.cfg.handicap}` : ""}）`;
       } else {
         t = r.winner ? `${C(r.winner)} 胜` : "平局";
         const order = range(np).sort((a, b) => (isOut(a) - isOut(b)) || (r.areas[K(b)] - r.areas[K(a)]));
@@ -1927,7 +1976,7 @@ input[type="range"]:disabled{opacity:.5}
     if (cfg.shape === "cube") bits.push(`立方体 · 每条棱 ${cfg.N} 点`);
     else bits.push(`${cfg.N} 路 · 侵蚀 ${cfg.rough}${cfg.holes ? " · 有空洞" : ""}`);
     bits.push(`${SH.cnt} 个交叉点`);
-    bits.push(np === 2 ? `双色 · 贴 ${fmt(cfg.komi)}` : `${np === 3 ? "三" : "四"}色 · 不贴目`);
+    bits.push(np !== 2 ? `${np === 3 ? "三" : "四"}色 · 不贴目` : cfg.handicap ? `让 ${cfg.handicap} 子 · 贴 ${fmt(cfg.komi)} + 补还 ${cfg.handicap}` : `双色 · 贴 ${fmt(cfg.komi)}`);
     if (cfg.shape !== "cube") bits.push(`No.${cfg.seed}`);
     return bits.join(" · ");
   }
@@ -2005,7 +2054,7 @@ input[type="range"]:disabled{opacity:.5}
       const who = $("who" + c);
       who.replaceChildren();
       const bits = [];
-      if (pregame) bits.push(`第 ${c} 手`);
+      if (pregame) bits.push(G.cfg.handicap && np === 2 ? (c === 1 ? `受让 ${G.cfg.handicap} 子` : `让 ${G.cfg.handicap} 子`) : `第 ${c} 手`);
       if (online) {
         const seated = G.seats[K(c)];
         if (me === c) bits.push("你");
@@ -2041,17 +2090,19 @@ input[type="range"]:disabled{opacity:.5}
     if (document.activeElement !== rg) rg.value = String(cur);
     $("rvFirst").disabled = $("rvPrev").disabled = cur <= 0 && !(inReview && review.try.length);
     $("rvNext").disabled = $("rvLast").disabled = !inReview;
-    $("rvCount").textContent = inReview ? `第 ${cur} / ${total} 手` + (review.try.length ? ` · 试下 ${review.try.length} 手` : "") : `共 ${total} 手`;
+    const fn = freeN(), real = Math.max(0, total - fn);
+    const pos = fn && cur <= fn ? `让子 ${cur} / ${fn}` : `第 ${cur - fn} / ${real} 手`;
+    $("rvCount").textContent = inReview ? pos + (review.try.length ? ` · 试下 ${review.try.length} 手` : "") : `共 ${real} 手` + (fn && total < fn ? ` · 让子 ${total} / ${fn}` : "");
     $("numsToggle").checked = showNums;
     $("rvTry").hidden = inReview;
     const seated = !online || me !== 0;
     const activeMe = !online || (me !== 0 && !isOut(me));
     $("undoBtn").disabled = online ? (!activeMe || !G.moves.some((m) => m[1] === me) || (G.undo && G.undo !== me) || !!G.sreq) : !G.moves.length;
     $("undoBtn").textContent = online && G.undo === me ? "撤回悔棋" : "悔棋";
-    $("passBtn").disabled = !canPlay();
+    $("passBtn").disabled = !canPlay() || !!st.placing;
     const sb = $("scoreBtn");
     sb.textContent = !online ? "数子" : G.sreq === me && me ? "撤回数子申请" : "申请数子";
-    sb.disabled = sharedView || !G.moves.length || (online && (!activeMe || !full || !!G.undo || (G.sreq && G.sreq !== me)));
+    sb.disabled = sharedView || !G.moves.length || !!st.placing || (online && (!activeMe || !full || !!G.undo || (G.sreq && G.sreq !== me)));
     $("resignBtn").disabled = !activeMe || (online && !full);
     $("resetBtn").disabled = !seated || !G.moves.length;
     const myOk = online && me ? G.ok[K(me)] : false;
@@ -2086,6 +2137,19 @@ input[type="range"]:disabled{opacity:.5}
     $("lastBtn").disabled = !(st && st.last >= 0);
     document.querySelectorAll("#komiSeg button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.k === cfg.komi)); b.disabled = locked; });
     $("komiField").hidden = np !== 2;
+    const hc = np === 2 ? cfg.handicap || 0 : 0, plan = hcPlan();
+    $("hcField").hidden = np !== 2;
+    $("hcVal").textContent = hc ? `${hc} 子` : "分先";
+    $("hcMinus").disabled = locked || !hc;
+    $("hcPlus").disabled = locked || hc >= 9;
+    const hh = $("hcHint");
+    hh.hidden = !hc;
+    if (plan) {
+      const comp = `数子时 ${C(2)} 另得补还 ${hc} 目（中国规则）。`;
+      hh.textContent = plan.mode === "fixed"
+        ? `${C(1)} 的 ${hc} 子摆在星位上，${C(2)} 先下。${comp}`
+        : `${plan.why === "cube" ? "立方体没有标准星位" : "这块棋盘的星位不全"}，开局后 ${C(1)} 先自己放 ${hc} 子，再轮到 ${C(2)}。${comp}`;
+    }
     const mh = $("multiHint");
     mh.hidden = np === 2;
     mh.textContent = `${np === 3 ? "三" : "四"}人按 ${range(np).map(C).join(" → ")} 的顺序轮流落子。所有人连续停一手进入数子，按数子多少排名，不贴目。`;
@@ -2137,7 +2201,21 @@ input[type="range"]:disabled{opacity:.5}
   $("againBtn").addEventListener("click", () => rematch(false));
   $("swapBtn").addEventListener("click", () => rematch(true));
 
-  document.querySelectorAll("#playersSeg button").forEach((b) => b.addEventListener("click", () => { if (+b.dataset.p !== NP()) setCfg({ players: +b.dataset.p }); }));
+  document.querySelectorAll("#playersSeg button").forEach((b) => b.addEventListener("click", () => {
+    const n = +b.dataset.p;
+    if (n === NP()) return;
+    setCfg(n === 2 ? { players: n } : { players: n, handicap: 0, komi: G.cfg.handicap ? 7.5 : G.cfg.komi });
+  }));
+  const setHandicap = (n) => {
+    const cur = G.cfg.handicap || 0;
+    if (n === cur) return;
+    const part = { handicap: n };
+    if (n && !cur) part.komi = 0;
+    if (!n && cur) part.komi = 7.5;
+    setCfg(part);
+  };
+  $("hcMinus").addEventListener("click", () => { const h = G.cfg.handicap || 0; setHandicap(h <= 2 ? 0 : h - 1); });
+  $("hcPlus").addEventListener("click", () => { const h = G.cfg.handicap || 0; setHandicap(h ? Math.min(9, h + 1) : 2); });
   document.querySelectorAll("#shapeSeg button").forEach((b) => b.addEventListener("click", () => {
     const shape = b.dataset.s;
     if ((G.cfg.shape === "cube" ? "cube" : "flat") === shape) return;
@@ -2160,6 +2238,7 @@ input[type="range"]:disabled{opacity:.5}
     }
     let msg;
     if (roomCode && !allSeated()) msg = `等待玩家加入（${seatedCount()}/${NP()}）`;
+    else if (canPlay() && st.placing) msg = `${C(1)} 先放 ${st.placing} 颗让子，放在哪里都可以`;
     else if (canPlay()) msg = `轮到 ${C(st.turn)}，${isCube() ? "转到想下的面，" : ""}点棋盘落下第一手`;
     else if (roomCode && me === 0) msg = "你在观战";
     else msg = `等 ${C(st.turn)} 下第一手`;
